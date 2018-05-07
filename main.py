@@ -129,18 +129,60 @@ def apply_color_transform(img):
     return color_binary, binary
 
 
+def get_transform_dst(image, xoffset=0, yoffset=0):
+    return np.float32([
+        [image.shape[1]-xoffset, yoffset],
+        [image.shape[1]-xoffset, image.shape[0]-yoffset],
+        [xoffset, image.shape[0]-yoffset],
+        [xoffset, yoffset],
+    ])
+
+
+def transform_perspective(image, src, xoffset=0, yoffset=0):
+    dst = get_transform_dst(image, xoffset=xoffset, yoffset=yoffset)
+    M = cv2.getPerspectiveTransform(src, dst)
+    warped = cv2.warpPerspective(image, M, image.shape[::-1], flags=cv2.INTER_LINEAR)
+    return warped
+
+
 def pipeline(image):
 
     [undistorted_image] = undistort([image])
     color_binary_image, binary_image = apply_color_transform(undistorted_image)
+    src = np.float32([
+        [710, 465],
+        [1040, 676],
+        [265, 676],
+        [570, 465],
+    ])
+    xoffset = 300
+    yoffset =0
+    warped = transform_perspective(binary_image, src, xoffset=xoffset, yoffset=yoffset)
 
-    # f, axs = plt.subplots(1, 3, figsize=(30, 10))
-    # f.tight_layout()
-    # axs[0].imshow(image)
-    # axs[1].imshow(color_binary_image)
-    # axs[2].imshow(binary_image, cmap='gray')
-    # f.savefig('figure.png')
-    save_figure([image, color_binary_image, binary_image], fname='figure.png', cmaps=[None, None, 'gray'])
+    f, axs = plt.subplots(2, 3, figsize=(30, 10))
+    f.tight_layout()
+
+    axs[0][0].imshow(image)
+    axs[0][1].imshow(color_binary_image)
+    axs[0][2].imshow(binary_image, cmap='gray')
+
+    axs[1][1].imshow(binary_image, cmap='gray')
+    axs[1][2].imshow(warped, cmap='gray')
+
+    dst = get_transform_dst(binary_image, xoffset=xoffset, yoffset=yoffset)
+
+    axs[1][2].plot(*dst[0], 'o')
+    axs[1][2].plot(*dst[1], '*')
+    axs[1][2].plot(*dst[2], 'x')
+    axs[1][2].plot(*dst[3], '+')
+
+    axs[1][1].plot(*src[0], 'o')
+    axs[1][1].plot(*src[1], '*')
+    axs[1][1].plot(*src[2], 'x')
+    axs[1][1].plot(*src[3], '+')
+
+    f.savefig('figure.png')
+    # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
 
 
 def main():
