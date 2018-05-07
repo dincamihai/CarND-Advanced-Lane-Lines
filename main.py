@@ -80,6 +80,12 @@ def undistort(orig_images):
     return images
 
 
+def crop(image):
+    image[0:440, :, :] = 0
+    image[image.shape[0]-20:, :, :] = 0
+    return image
+
+
 def compute_binary(
     channel, ksize, thresholds=dict(sobelx=(0, 255), sobely=(0, 255), magnitude=(0, 255), directional=(-np.pi/2, np.pi/2))
 ):
@@ -118,8 +124,9 @@ def apply_color_transform(img):
 
     channel3_mask = compute_binary(
         channel3, ksize=19,
-        thresholds=dict(sobelx=(200, 255), sobely=(0, 10), magnitude=(50, 255), directional=(0.7, 1.3))
+        thresholds=dict(sobelx=(200, 255), sobely=(0, 10), magnitude=(200, 255), directional=(0.7, 1.3))
     )
+    # channel3_mask = np.zeros_like(channel3)
 
     # Stack each channel
     color_binary = np.dstack((channel1_mask, channel2_mask, channel3_mask)) * 255
@@ -129,17 +136,19 @@ def apply_color_transform(img):
     return color_binary, binary
 
 
-def get_transform_dst(image, xoffset=0, yoffset=0):
+def get_transform_dst(shape, xoffset=0, yoffset=0):
     return np.float32([
-        [image.shape[1]-xoffset, yoffset],
-        [image.shape[1]-xoffset, image.shape[0]-yoffset],
-        [xoffset, image.shape[0]-yoffset],
+        [shape[1]-xoffset, yoffset],
+        [shape[1]-xoffset, shape[0]-yoffset],
+        [xoffset, shape[0]-yoffset],
         [xoffset, yoffset],
     ])
 
 
-def transform_perspective(image, src, xoffset=0, yoffset=0):
-    dst = get_transform_dst(image, xoffset=xoffset, yoffset=yoffset)
+def transform_perspective(image, src, shape=None, xoffset=0, yoffset=0):
+    if shape is None:
+        shape = image.shape
+    dst = get_transform_dst(shape, xoffset=xoffset, yoffset=yoffset)
     M = cv2.getPerspectiveTransform(src, dst)
     warped = cv2.warpPerspective(image, M, image.shape[::-1], flags=cv2.INTER_LINEAR)
     return warped
@@ -148,16 +157,17 @@ def transform_perspective(image, src, xoffset=0, yoffset=0):
 def pipeline(image):
 
     [undistorted_image] = undistort([image])
-    color_binary_image, binary_image = apply_color_transform(undistorted_image)
+    cropped_image = crop(undistorted_image)
+    color_binary_image, binary_image = apply_color_transform(cropped_image)
     src = np.float32([
-        [710, 465],
-        [1040, 676],
-        [265, 676],
-        [570, 465],
+        [710, 466],
+        [1090, 710],
+        [220, 710],
+        [570, 466],
     ])
     xoffset = 300
-    yoffset =0
-    warped = transform_perspective(binary_image, src, xoffset=xoffset, yoffset=yoffset)
+    yoffset = 0
+    warped = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
     f, axs = plt.subplots(2, 3, figsize=(30, 10))
     f.tight_layout()
@@ -166,20 +176,23 @@ def pipeline(image):
     axs[0][1].imshow(color_binary_image)
     axs[0][2].imshow(binary_image, cmap='gray')
 
-    axs[1][1].imshow(binary_image, cmap='gray')
-    axs[1][2].imshow(warped, cmap='gray')
+    axs[1][0].imshow(binary_image, cmap='gray')
+    axs[1][1].imshow(warped, cmap='gray')
 
-    dst = get_transform_dst(binary_image, xoffset=xoffset, yoffset=yoffset)
+    dst = get_transform_dst(undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
-    axs[1][2].plot(*dst[0], 'o')
-    axs[1][2].plot(*dst[1], '*')
-    axs[1][2].plot(*dst[2], 'x')
-    axs[1][2].plot(*dst[3], '+')
+    axs[1][0].plot(*src[0], 'o')
+    axs[1][0].plot(*src[1], '*')
+    axs[1][0].plot(*src[2], 'x')
+    axs[1][0].plot(*src[3], '+')
 
-    axs[1][1].plot(*src[0], 'o')
-    axs[1][1].plot(*src[1], '*')
-    axs[1][1].plot(*src[2], 'x')
-    axs[1][1].plot(*src[3], '+')
+    axs[1][1].plot(*dst[0], 'o')
+    axs[1][1].plot(*dst[1], '*')
+    axs[1][1].plot(*dst[2], 'x')
+    axs[1][1].plot(*dst[3], '+')
+
+    histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
+    axs[1][2].plot(histogram)
 
     f.savefig('figure.png')
     # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
