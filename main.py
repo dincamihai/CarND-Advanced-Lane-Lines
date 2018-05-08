@@ -218,8 +218,8 @@ def pipeline(image):
         left_peak_value = histogram[left_peak]
         right_peak_value = histogram[right_peak]
 
-        left_factor = 0.3
-        right_factor = 0.3
+        left_factor = 0.7
+        right_factor = 0.7
         left_right_distance = 700
         comparison_factor = 5
 
@@ -235,9 +235,13 @@ def pipeline(image):
         else:
             right_factor = 1
 
-        if left_peak_value > (comparison_factor * right_peak_value):
+        if left_peak_value > (comparison_factor * right_peak_value) or not (
+            (left_peak + left_right_distance - 50) <= right_peak <= (left_peak + left_right_distance + 50)
+        ):
             right_peak = left_peak + left_right_distance
-        elif right_peak_value > (comparison_factor * left_peak_value):
+        elif right_peak_value > (comparison_factor * left_peak_value) or not (
+            (right_peak + left_right_distance - 50) <= left_peak <= (right_peak + left_right_distance + 50)
+        ):
             left_peak = right_peak - left_right_distance
 
         right_peak = right_peak * right_factor + last_right_peak * (1-right_factor)
@@ -259,12 +263,12 @@ def pipeline(image):
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
 
-    axs[1][2].imshow(warped, cmap='gray')
-    axs[1][2].plot(left_fitx, ploty, color='yellow')
-    axs[1][2].plot(right_fitx, ploty, color='yellow')
+    # axs[1][2].imshow(warped, cmap='gray')
+    axs[1][1].plot(left_fitx, ploty, color='yellow')
+    axs[1][1].plot(right_fitx, ploty, color='yellow')
 
-    axs[1][2].plot(left_x_points, left_y_points, 'o', color='red')
-    axs[1][2].plot(right_x_points, right_y_points, 'o', color='red')
+    axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
+    axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
     plt.xlim(0, 1280)
     plt.ylim(720, 0)
 
