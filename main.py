@@ -191,8 +191,82 @@ def pipeline(image):
     axs[1][1].plot(*dst[2], 'x')
     axs[1][1].plot(*dst[3], '+')
 
-    histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
-    axs[1][2].plot(histogram)
+    nwindows = 5
+    window_height = warped.shape[0] // nwindows
+
+    left_x_points = []
+    left_y_points = []
+    right_x_points = []
+    right_y_points = []
+
+    def find_peaks(histogram):
+        middle = histogram.shape[0] // 2
+        right = middle + np.argmax(histogram[middle:])
+        left = np.argmax(histogram[:middle])
+        return left, right
+
+    threshold = 50
+    for window in range(nwindows):
+        top = warped.shape[0] - (window_height * (window+1))
+        bottom = top + window_height
+        histogram = np.sum(warped[top:bottom,:], axis=0)
+        left_peak, right_peak = find_peaks(histogram)
+        print(top)
+        print(bottom)
+        y_coord = (top+bottom) // 2
+        print(y_coord)
+        left_peak_value = histogram[left_peak]
+        right_peak_value = histogram[right_peak]
+
+        left_factor = 0.3
+        right_factor = 0.3
+        left_right_distance = 700
+        comparison_factor = 5
+
+        last_left_peak = left_peak
+        if left_x_points:
+            last_left_peak = left_x_points[-1]
+        else:
+            left_factor = 1
+
+        last_right_peak = right_peak
+        if right_x_points:
+            last_right_peak = right_x_points[-1]
+        else:
+            right_factor = 1
+
+        if left_peak_value > (comparison_factor * right_peak_value):
+            right_peak = left_peak + left_right_distance
+        elif right_peak_value > (comparison_factor * left_peak_value):
+            left_peak = right_peak - left_right_distance
+
+        right_peak = right_peak * right_factor + last_right_peak * (1-right_factor)
+        left_peak = left_peak * left_factor + last_left_peak * (1-left_factor)
+
+        left_x_points.append(left_peak)
+        left_y_points.append(y_coord)
+        right_x_points.append(right_peak)
+        right_y_points.append(y_coord)
+        # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
+        # axs[1][2].plot(right_peak, histogram[right_peak], 'o', ms=10, color='blue')
+
+    print(list(zip(left_x_points, left_y_points)))
+    print(list(zip(right_x_points, right_y_points)))
+    left_fit = np.polyfit(left_y_points, left_x_points, 2)
+    right_fit = np.polyfit(right_y_points, right_x_points, 2)
+
+    ploty = np.linspace(0, warped.shape[0]-1, warped.shape[0])
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+    axs[1][2].imshow(warped, cmap='gray')
+    axs[1][2].plot(left_fitx, ploty, color='yellow')
+    axs[1][2].plot(right_fitx, ploty, color='yellow')
+
+    axs[1][2].plot(left_x_points, left_y_points, 'o', color='red')
+    axs[1][2].plot(right_x_points, right_y_points, 'o', color='red')
+    plt.xlim(0, 1280)
+    plt.ylim(720, 0)
 
     f.savefig('figure.png')
     # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
