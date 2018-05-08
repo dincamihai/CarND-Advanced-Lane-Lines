@@ -251,6 +251,8 @@ def pipeline(image):
         left_y_points.append(y_coord)
         right_x_points.append(right_peak)
         right_y_points.append(y_coord)
+
+
         # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
         # axs[1][2].plot(right_peak, histogram[right_peak], 'o', ms=10, color='blue')
 
@@ -274,6 +276,20 @@ def pipeline(image):
 
     f.savefig('figure.png')
     # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
+
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+
+    # Fit new polynomials to x,y in world space
+    left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
+    y_eval = np.max(ploty)
+    # Calculate the new radii of curvature
+    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+    # Now our radius of curvature is in meters
+    print(left_curverad, 'm', right_curverad, 'm')
 
 
 def main():
