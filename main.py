@@ -154,7 +154,76 @@ def transform_perspective(image, src, shape=None, xoffset=0, yoffset=0):
     return warped, dst
 
 
-def pipeline(image):
+def find_peaks(histogram):
+    middle = histogram.shape[0] // 2
+    right = middle + np.argmax(histogram[middle:])
+    left = np.argmax(histogram[:middle])
+    return left, right
+
+
+def get_coordinates(warped):
+    nwindows = 7
+    left_attenuation_factor = 0.7
+    right_attenuation_factor = 0.7
+    left_right_distance = 700
+    comparison_factor = 3
+
+    window_height = warped.shape[0] // nwindows
+
+    left_x_points = []
+    left_y_points = []
+    right_x_points = []
+    right_y_points = []
+
+    threshold = 50
+    for window in range(nwindows):
+        top = warped.shape[0] - (window_height * (window+1))
+        bottom = top + window_height
+        histogram = np.sum(warped[top:bottom,:], axis=0)
+        left_peak, right_peak = find_peaks(histogram)
+        # print(top)
+        # print(bottom)
+        y_coord = bottom# (top+bottom) // 2
+        # print(y_coord)
+        left_peak_value = histogram[left_peak]
+        right_peak_value = histogram[right_peak]
+
+        last_left_peak = left_peak
+        if left_x_points:
+            last_left_peak = left_x_points[-1]
+        else:
+            left_attenuation_factor = 1
+
+        last_right_peak = right_peak
+        if right_x_points:
+            last_right_peak = right_x_points[-1]
+        else:
+            right_attenuation_factor = 1
+
+        if left_peak_value > (comparison_factor * right_peak_value) or not (
+            (left_peak + left_right_distance - 50) <= right_peak <= (left_peak + left_right_distance + 50)
+        ):
+            right_peak = left_peak + left_right_distance
+        elif right_peak_value > (comparison_factor * left_peak_value) or not (
+            (right_peak + left_right_distance - 50) <= left_peak <= (right_peak + left_right_distance + 50)
+        ):
+            left_peak = right_peak - left_right_distance
+
+        right_peak = right_peak * right_attenuation_factor + last_right_peak * (1-right_attenuation_factor)
+        left_peak = left_peak * left_attenuation_factor + last_left_peak * (1-left_attenuation_factor)
+
+        left_x_points.append(left_peak)
+        left_y_points.append(y_coord)
+        right_x_points.append(right_peak)
+        right_y_points.append(y_coord)
+
+
+        # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
+        # axs[1][2].plot(right_peak, histogram[right_peak], 'o', ms=10, color='blue')
+    return left_x_points, left_y_points, right_x_points, right_y_points
+
+
+def pipeline(image, save_image=False):
 
     [undistorted_image] = undistort([image])
     cropped_image = crop(np.copy(undistorted_image))
@@ -169,110 +238,16 @@ def pipeline(image):
     yoffset = 0
     warped, dst = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
-    f, axs = plt.subplots(2, 3, figsize=(30, 10))
-    f.tight_layout()
+    left_x_points, left_y_points, right_x_points, right_y_points = get_coordinates(warped)
 
-    axs[0][0].imshow(image)
-    axs[0][1].imshow(color_binary_image)
-    axs[0][2].imshow(binary_image, cmap='gray')
-
-    axs[1][0].imshow(binary_image, cmap='gray')
-    axs[1][1].imshow(warped, cmap='gray')
-
-    # dst = get_transform_dst(undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
-
-    axs[1][0].plot(*src[0], 'o')
-    axs[1][0].plot(*src[1], '*')
-    axs[1][0].plot(*src[2], 'x')
-    axs[1][0].plot(*src[3], '+')
-
-    axs[1][1].plot(*dst[0], 'o')
-    axs[1][1].plot(*dst[1], '*')
-    axs[1][1].plot(*dst[2], 'x')
-    axs[1][1].plot(*dst[3], '+')
-
-    nwindows = 5
-    window_height = warped.shape[0] // nwindows
-
-    left_x_points = []
-    left_y_points = []
-    right_x_points = []
-    right_y_points = []
-
-    def find_peaks(histogram):
-        middle = histogram.shape[0] // 2
-        right = middle + np.argmax(histogram[middle:])
-        left = np.argmax(histogram[:middle])
-        return left, right
-
-    threshold = 50
-    for window in range(nwindows):
-        top = warped.shape[0] - (window_height * (window+1))
-        bottom = top + window_height
-        histogram = np.sum(warped[top:bottom,:], axis=0)
-        left_peak, right_peak = find_peaks(histogram)
-        print(top)
-        print(bottom)
-        y_coord = (top+bottom) // 2
-        print(y_coord)
-        left_peak_value = histogram[left_peak]
-        right_peak_value = histogram[right_peak]
-
-        left_factor = 0.7
-        right_factor = 0.7
-        left_right_distance = 700
-        comparison_factor = 5
-
-        last_left_peak = left_peak
-        if left_x_points:
-            last_left_peak = left_x_points[-1]
-        else:
-            left_factor = 1
-
-        last_right_peak = right_peak
-        if right_x_points:
-            last_right_peak = right_x_points[-1]
-        else:
-            right_factor = 1
-
-        if left_peak_value > (comparison_factor * right_peak_value) or not (
-            (left_peak + left_right_distance - 50) <= right_peak <= (left_peak + left_right_distance + 50)
-        ):
-            right_peak = left_peak + left_right_distance
-        elif right_peak_value > (comparison_factor * left_peak_value) or not (
-            (right_peak + left_right_distance - 50) <= left_peak <= (right_peak + left_right_distance + 50)
-        ):
-            left_peak = right_peak - left_right_distance
-
-        right_peak = right_peak * right_factor + last_right_peak * (1-right_factor)
-        left_peak = left_peak * left_factor + last_left_peak * (1-left_factor)
-
-        left_x_points.append(left_peak)
-        left_y_points.append(y_coord)
-        right_x_points.append(right_peak)
-        right_y_points.append(y_coord)
-
-
-        # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
-        # axs[1][2].plot(right_peak, histogram[right_peak], 'o', ms=10, color='blue')
-
-    print(list(zip(left_x_points, left_y_points)))
-    print(list(zip(right_x_points, right_y_points)))
+    # print(list(zip(left_x_points, left_y_points)))
+    # print(list(zip(right_x_points, right_y_points)))
     left_fit = np.polyfit(left_y_points, left_x_points, 2)
     right_fit = np.polyfit(right_y_points, right_x_points, 2)
 
     ploty = np.linspace(0, warped.shape[0]-1, warped.shape[0])
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
-    # axs[1][2].imshow(warped, cmap='gray')
-    axs[1][1].plot(left_fitx, ploty, color='yellow')
-    axs[1][1].plot(right_fitx, ploty, color='yellow')
-
-    axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
-    axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
-    plt.xlim(0, 1280)
-    plt.ylim(720, 0)
 
     # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
 
@@ -307,9 +282,42 @@ def pipeline(image):
     newwarp = cv2.warpPerspective(color_warp, Minv, (undistorted_image.shape[1], undistorted_image.shape[0])) 
     # Combine the result with the original image
     result = cv2.addWeighted(undistorted_image, 1, newwarp, 0.3, 0)
-    axs[1][2].imshow(result)
 
-    f.savefig('figure.png')
+    if save_figure:
+        f, axs = plt.subplots(2, 3, figsize=(30, 10))
+        f.tight_layout()
+
+        axs[0][0].imshow(image)
+        axs[0][1].imshow(color_binary_image)
+        axs[0][2].imshow(binary_image, cmap='gray')
+
+        axs[1][0].imshow(binary_image, cmap='gray')
+        axs[1][1].imshow(warped, cmap='gray')
+
+        # dst = get_transform_dst(undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
+
+        axs[1][0].plot(*src[0], 'o')
+        axs[1][0].plot(*src[1], '*')
+        axs[1][0].plot(*src[2], 'x')
+        axs[1][0].plot(*src[3], '+')
+
+        axs[1][1].plot(*dst[0], 'o')
+        axs[1][1].plot(*dst[1], '*')
+        axs[1][1].plot(*dst[2], 'x')
+        axs[1][1].plot(*dst[3], '+')
+
+        # axs[1][2].imshow(warped, cmap='gray')
+        axs[1][1].plot(left_fitx, ploty, color='yellow')
+        axs[1][1].plot(right_fitx, ploty, color='yellow')
+
+        axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
+        axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+        axs[1][2].imshow(result)
+
+        f.savefig('figure.png')
+    return result
 
 
 def main():
@@ -320,11 +328,15 @@ def main():
     parser_calibrate = subparsers.add_parser('calibrate')
     parser_undistort = subparsers.add_parser('undistort')
     parser_pipeline = subparsers.add_parser('pipeline')
+    parser_video = subparsers.add_parser('video')
 
     parser_calibrate.add_argument('--action', type=str, default='calibrate')
     parser_undistort.add_argument('--action', type=str, default='undistort')
     parser_pipeline.add_argument('--action', type=str, default='pipeline')
+    parser_video.add_argument('--action', type=str, default='video')
     parser_pipeline.add_argument('image', type=str)
+    parser_video.add_argument('video_in', type=str)
+    parser_video.add_argument('video_out', type=str)
 
     arguments = parser.parse_args()
 
@@ -338,8 +350,12 @@ def main():
     elif arguments.action == 'pipeline':
         image = cv2.imread(arguments.image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        pipeline(image)
-
+        pipeline(image, save_image=True)
+    elif arguments.action == 'video':
+        from moviepy.editor import VideoFileClip
+        video_in = VideoFileClip(arguments.video_in)
+        video_out = video_in.fl_image(pipeline)
+        video_out.write_videofile(arguments.video_out, audio=False)
 
 if __name__ == "__main__":
     main()
