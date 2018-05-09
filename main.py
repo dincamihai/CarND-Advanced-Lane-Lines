@@ -151,13 +151,13 @@ def transform_perspective(image, src, shape=None, xoffset=0, yoffset=0):
     dst = get_transform_dst(shape, xoffset=xoffset, yoffset=yoffset)
     M = cv2.getPerspectiveTransform(src, dst)
     warped = cv2.warpPerspective(image, M, image.shape[::-1], flags=cv2.INTER_LINEAR)
-    return warped
+    return warped, dst
 
 
 def pipeline(image):
 
     [undistorted_image] = undistort([image])
-    cropped_image = crop(undistorted_image)
+    cropped_image = crop(np.copy(undistorted_image))
     color_binary_image, binary_image = apply_color_transform(cropped_image)
     src = np.float32([
         [710, 466],
@@ -167,7 +167,7 @@ def pipeline(image):
     ])
     xoffset = 300
     yoffset = 0
-    warped = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
+    warped, dst = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
     f, axs = plt.subplots(2, 3, figsize=(30, 10))
     f.tight_layout()
@@ -179,7 +179,7 @@ def pipeline(image):
     axs[1][0].imshow(binary_image, cmap='gray')
     axs[1][1].imshow(warped, cmap='gray')
 
-    dst = get_transform_dst(undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
+    # dst = get_transform_dst(undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
     axs[1][0].plot(*src[0], 'o')
     axs[1][0].plot(*src[1], '*')
@@ -274,7 +274,6 @@ def pipeline(image):
     plt.xlim(0, 1280)
     plt.ylim(720, 0)
 
-    f.savefig('figure.png')
     # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
 
     # Define conversions in x and y from pixels space to meters
@@ -290,6 +289,27 @@ def pipeline(image):
     right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
     # Now our radius of curvature is in meters
     print(left_curverad, 'm', right_curverad, 'm')
+
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+
+    Minv = cv2.getPerspectiveTransform(dst, src)
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (undistorted_image.shape[1], undistorted_image.shape[0])) 
+    # Combine the result with the original image
+    result = cv2.addWeighted(undistorted_image, 1, newwarp, 0.3, 0)
+    axs[1][2].imshow(result)
+
+    f.savefig('figure.png')
 
 
 def main():
