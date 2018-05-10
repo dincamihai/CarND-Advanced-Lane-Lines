@@ -9,7 +9,7 @@ import argparse
 import matplotlib
 import datetime
 import uuid
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from color import abs_sobel_thresh, mag_thresh, dir_threshold
@@ -161,61 +161,38 @@ def find_peaks(histogram):
     return left, right
 
 
-def get_coordinates(warped):
+def get_coordinates(warped, initial_coords=None):
     nwindows = 7
-    left_attenuation_factor = 0.7
-    right_attenuation_factor = 0.7
-    left_right_distance = 700
-    comparison_factor = 3
-
     window_height = warped.shape[0] // nwindows
+    window_width = 50
 
-    left_x_points = []
-    left_y_points = []
-    right_x_points = []
-    right_y_points = []
+    left_x_points = [initial_coords[0]]
+    left_y_points = [0]
+    right_x_points = [initial_coords[1]]
+    right_y_points = [0]
 
-    threshold = 50
+    left_window_left = initial_coords[0] - window_width // 2
+    left_window_right = initial_coords[0] + window_width
+
+    right_window_left = initial_coords[1] - window_width // 2
+    right_window_right = initial_coords[1] + window_width
+
     for window in range(nwindows):
-        top = warped.shape[0] - (window_height * (window+1))
-        bottom = top + window_height
-        histogram = np.sum(warped[top:bottom,:], axis=0)
-        left_peak, right_peak = find_peaks(histogram)
-        # print(top)
-        # print(bottom)
-        y_coord = bottom# (top+bottom) // 2
-        # print(y_coord)
-        left_peak_value = histogram[left_peak]
-        right_peak_value = histogram[right_peak]
+        window_top = warped.shape[0] - (window_height * (window+1))
+        window_bottom = window_top + window_height
 
-        last_left_peak = left_peak
-        if left_x_points:
-            last_left_peak = left_x_points[-1]
-        else:
-            left_attenuation_factor = 1
+        left_window = warped[window_top:window_bottom, left_window_left:left_window_right]
+        right_window = warped[window_top:window_bottom, right_window_left:right_window_right]
 
-        last_right_peak = right_peak
-        if right_x_points:
-            last_right_peak = right_x_points[-1]
-        else:
-            right_attenuation_factor = 1
+        left_nonzero = left_window.nonzero()[1] + left_window_left
+        right_nonzero = right_window.nonzero()[1] + right_window_left
 
-        if left_peak_value > (comparison_factor * right_peak_value) or not (
-            (left_peak + left_right_distance - 50) <= right_peak <= (left_peak + left_right_distance + 50)
-        ):
-            right_peak = left_peak + left_right_distance
-        elif right_peak_value > (comparison_factor * left_peak_value) or not (
-            (right_peak + left_right_distance - 50) <= left_peak <= (right_peak + left_right_distance + 50)
-        ):
-            left_peak = right_peak - left_right_distance
-
-        right_peak = right_peak * right_attenuation_factor + last_right_peak * (1-right_attenuation_factor)
-        left_peak = left_peak * left_attenuation_factor + last_left_peak * (1-left_attenuation_factor)
-
-        left_x_points.append(left_peak)
-        left_y_points.append(y_coord)
-        right_x_points.append(right_peak)
-        right_y_points.append(y_coord)
+        if len(left_nonzero) > 10:
+            left_x_points.append(np.mean(left_nonzero))
+            left_y_points.append(window_bottom)
+        if len(right_nonzero) > 10:
+            right_x_points.append(np.mean(right_nonzero))
+            right_y_points.append(window_bottom)
 
 
         # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
@@ -238,7 +215,11 @@ def pipeline(image, save_image=False):
     yoffset = 0
     warped, dst = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
-    left_x_points, left_y_points, right_x_points, right_y_points = get_coordinates(warped)
+    histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
+    left_peak, right_peak = find_peaks(histogram)
+
+    left_x_points, left_y_points, right_x_points, right_y_points = get_coordinates(
+        warped, initial_coords=(left_peak, right_peak))
 
     # print(list(zip(left_x_points, left_y_points)))
     # print(list(zip(right_x_points, right_y_points)))
