@@ -12,7 +12,11 @@ import uuid
 # matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+from functools import partial
 from color import abs_sobel_thresh, mag_thresh, dir_threshold
+
+
+STANDARD_LANE_WIDTH = 700
 
 
 def save_figure(images, fname=None, cmaps=[]):
@@ -80,10 +84,27 @@ def undistort(orig_images):
     return images
 
 
-def crop(image):
-    image[0:440, :, :] = 0
-    image[image.shape[0]-20:, :, :] = 0
-    return image
+def crop(image, debug=0):
+    mask = np.zeros_like(image)
+    cv2.fillConvexPoly(
+        mask,
+        # vertices
+        np.array(
+            [
+                [mask.shape[1]-100, image.shape[0]],  # bottom right
+                [100, mask.shape[0]],                 # bottom left
+                [600, 420],                           # top left
+                [image.shape[1]-600, 420],            # top right
+            ]
+        ),
+        # color
+        (255, 255, 255)
+    )
+    out = cv2.bitwise_and(image, mask, image)
+    if debug >= 2:
+        plt.imsave('windows.png', out)
+        import pdb; pdb.set_trace()
+    return out
 
 
 def compute_binary(
@@ -158,41 +179,171 @@ def find_peaks(histogram):
     middle = histogram.shape[0] // 2
     right = middle + np.argmax(histogram[middle:])
     left = np.argmax(histogram[:middle])
+    magnitude_factor = 3
+    if histogram[left] >= magnitude_factor * histogram[right]:
+        right = left + STANDARD_LANE_WIDTH
+    elif histogram[right] >= magnitude_factor * histogram[left]:
+        left = right - STANDARD_LANE_WIDTH
     return left, right
 
 
-def get_coordinates(warped, initial_coords=None):
-    nwindows = 7
+def get_coordinates(warped, initial_coords=None, nwindows=7, debug=0):
     window_height = warped.shape[0] // nwindows
-    window_width = 50
+    window_width = 250
 
-    left_x_points = [initial_coords[0]]
-    left_y_points = [0]
-    right_x_points = [initial_coords[1]]
-    right_y_points = [0]
+    left_x_points = []
+    left_y_points = []
+    right_x_points = []
+    right_y_points = []
 
-    left_window_left = initial_coords[0] - window_width // 2
-    left_window_right = initial_coords[0] + window_width
-
-    right_window_left = initial_coords[1] - window_width // 2
-    right_window_right = initial_coords[1] + window_width
+    left_right_distance = 700
 
     for window in range(nwindows):
+
+        left_window_left = (left_x_points[-1] if left_x_points else initial_coords[0]) - window_width // 2
+        left_window_right = left_window_left + window_width
+
+        right_window_left = (right_x_points[-1] if right_x_points else initial_coords[1]) - window_width // 2
+        right_window_right = right_window_left + window_width
+
         window_top = warped.shape[0] - (window_height * (window+1))
         window_bottom = window_top + window_height
 
         left_window = warped[window_top:window_bottom, left_window_left:left_window_right]
         right_window = warped[window_top:window_bottom, right_window_left:right_window_right]
 
-        left_nonzero = left_window.nonzero()[1] + left_window_left
-        right_nonzero = right_window.nonzero()[1] + right_window_left
+        cv2.rectangle(
+            warped,
+            (left_window_left, window_top),
+            (left_window_right, window_bottom),
+            (0, 255, 0),
+            2
+        )
 
-        if len(left_nonzero) > 10:
-            left_x_points.append(np.mean(left_nonzero))
-            left_y_points.append(window_bottom)
-        if len(right_nonzero) > 10:
-            right_x_points.append(np.mean(right_nonzero))
-            right_y_points.append(window_bottom)
+        left_nonzero_x = left_window.nonzero()[1]    # + left_window_left
+        right_nonzero_x = right_window.nonzero()[1]  # + right_window_left
+        left_nonzero_y = left_window.nonzero()[0]    # + window_top
+        right_nonzero_y = right_window.nonzero()[0]  # + window_top
+
+        left_x_mean = None
+        right_x_mean = None
+        left_y_mean = None
+        right_y_mean = None
+
+        if len(left_nonzero_x):
+            left_x_mean = int(np.mean(left_nonzero_x))
+        if len(left_nonzero_y):
+            left_y_mean = int(np.mean(left_nonzero_y))
+        if len(right_nonzero_x):
+            right_x_mean = int(np.mean(right_nonzero_x))
+        if len(right_nonzero_y):
+            right_y_mean = int(np.mean(right_nonzero_y))
+
+        if left_x_mean and (not right_x_mean or len(right_nonzero_x) < 1000):
+            right_x_mean = left_x_mean
+            right_y_mean = left_y_mean
+        elif right_x_mean and (not left_x_mean or len(left_nonzero_x) < 1000):
+            left_x_mean = right_x_mean
+            left_y_mean = right_y_mean
+        elif not (left_x_mean and right_x_mean):
+            left_x_mean = (left_x_points[-1] if left_x_points else initial_coords[0]) - left_window_left
+            left_y_mean = (left_y_points[-1] if left_y_points else (window_bottom - window_top) // 2) - window_top
+            right_x_mean = (right_x_points[-1] if right_x_points else initial_coords[1]) - right_window_left
+            right_y_mean = (right_y_points[-1] if right_y_points else (window_bottom - window_top) // 2) - window_top
+
+        left_image = (left_window * 255).astype(np.uint8)
+        left_image = np.dstack((left_image, left_image, left_image))
+
+        right_image = (right_window * 255).astype(np.uint8)
+        right_image = np.dstack((right_image, right_image, right_image))
+
+        sep = np.zeros_like(left_image) + 255
+
+        if debug:
+            cv2.drawMarker(left_image, (left_x_mean, left_y_mean), color=(0,0,255), thickness=2)
+            cv2.drawMarker(right_image, (right_x_mean, right_y_mean), color=(255,0,0), thickness=2)
+            debug_image = np.concatenate([left_image, sep, right_image], axis=1)
+            plt.imsave('windows.png', debug_image)
+            if debug >= 2:
+                import pdb; pdb.set_trace()
+
+        attenuation_factor = 1
+        left_magnitude = len(left_nonzero_x)
+        last_left_value_x = left_x_points[-1] if left_x_points else initial_coords[0]
+        left_value_x = attenuation_factor * (left_x_mean + left_window_left) + (1-attenuation_factor) * last_left_value_x
+        left_value_y = left_y_mean + window_top
+
+        right_magnitude = len(right_nonzero_x)
+        last_right_value_x = right_x_points[-1] if right_x_points else initial_coords[1]
+        right_value_x = attenuation_factor * (right_x_mean + right_window_left) + (1-attenuation_factor) * last_right_value_x
+        right_value_y = right_y_mean + window_top
+
+        left_x_points.append(int(left_value_x))
+        left_y_points.append(int(left_value_y))
+        right_x_points.append(int(right_value_x))
+        right_y_points.append(int(right_value_y))
+
+        # print(left_window_left, right_window_left)
+
+        # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
+        # axs[1][2].plot(right_peak, histogram[right_peak], 'o', ms=10, color='blue')
+    return left_x_points, left_y_points, right_x_points, right_y_points
+
+
+def get_coordinates_hist(warped, initial_coords=None, nwindows=7):
+    left_attenuation_factor = 0.7
+    right_attenuation_factor = 0.7
+    left_right_distance = 700
+    comparison_factor = 3
+
+    window_height = warped.shape[0] // nwindows
+
+    left_x_points = []
+    left_y_points = []
+    right_x_points = []
+    right_y_points = []
+
+    threshold = 50
+    for window in range(nwindows):
+        top = warped.shape[0] - (window_height * (window+1))
+        bottom = top + window_height
+        histogram = np.sum(warped[top:bottom,:], axis=0)
+        left_peak, right_peak = find_peaks(histogram)
+        # print(top)
+        # print(bottom)
+        y_coord = bottom# (top+bottom) // 2
+        # print(y_coord)
+        left_peak_value = histogram[left_peak]
+        right_peak_value = histogram[right_peak]
+
+        last_left_peak = left_peak
+        if left_x_points:
+            last_left_peak = left_x_points[-1]
+        else:
+            left_attenuation_factor = 1
+
+        last_right_peak = right_peak
+        if right_x_points:
+            last_right_peak = right_x_points[-1]
+        else:
+            right_attenuation_factor = 1
+
+        if left_peak_value > (comparison_factor * right_peak_value) or not (
+            (left_peak + left_right_distance - 50) <= right_peak <= (left_peak + left_right_distance + 50)
+        ):
+            right_peak = left_peak + left_right_distance
+        elif right_peak_value > (comparison_factor * left_peak_value) or not (
+            (right_peak + left_right_distance - 50) <= left_peak <= (right_peak + left_right_distance + 50)
+        ):
+            left_peak = right_peak - left_right_distance
+
+        right_peak = right_peak * right_attenuation_factor + last_right_peak * (1-right_attenuation_factor)
+        left_peak = left_peak * left_attenuation_factor + last_left_peak * (1-left_attenuation_factor)
+
+        left_x_points.append(left_peak)
+        left_y_points.append(y_coord)
+        right_x_points.append(right_peak)
+        right_y_points.append(y_coord)
 
 
         # axs[1][2].plot(left_peak, histogram[left_peak], 'o', ms=10, color='red')
@@ -200,11 +351,15 @@ def get_coordinates(warped, initial_coords=None):
     return left_x_points, left_y_points, right_x_points, right_y_points
 
 
-def pipeline(image, save_image=False):
+def pipeline(init, image, debug=0):
+
+    init.setdefault('frameno', 0)
+    init.setdefault('coords', [None, None])
+    init.setdefault('last_fit', [None, None])
 
     [undistorted_image] = undistort([image])
-    cropped_image = crop(np.copy(undistorted_image))
-    color_binary_image, binary_image = apply_color_transform(cropped_image)
+    color_binary_image, binary_image = apply_color_transform(undistorted_image)
+    cropped_image = crop(np.copy(binary_image), debug=debug)
     src = np.float32([
         [710, 466],
         [1090, 710],
@@ -215,16 +370,31 @@ def pipeline(image, save_image=False):
     yoffset = 0
     warped, dst = transform_perspective(binary_image, src, shape=undistorted_image.shape, xoffset=xoffset, yoffset=yoffset)
 
-    histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
-    left_peak, right_peak = find_peaks(histogram)
+    if not (init['coords'][0] and init['coords'][1]):
+        print('initial coords')
+        histogram = np.sum(warped[warped.shape[0]//2:,:], axis=0)
+        init['coords'][0], init['coords'][1] = find_peaks(histogram)
+
+    nwindows = 7
+    # if init['last_fit'][0] is not None and init['last_fit'][1] is not None:
+    #     nwindows = 3
 
     left_x_points, left_y_points, right_x_points, right_y_points = get_coordinates(
-        warped, initial_coords=(left_peak, right_peak))
+        warped, initial_coords=init['coords'], nwindows=nwindows, debug=debug)
+
+    init['coords'][0], init['coords'][1] = int(left_x_points[-1]), int(right_x_points[-1])
 
     # print(list(zip(left_x_points, left_y_points)))
     # print(list(zip(right_x_points, right_y_points)))
     left_fit = np.polyfit(left_y_points, left_x_points, 2)
     right_fit = np.polyfit(right_y_points, right_x_points, 2)
+
+    if init['last_fit'][0] is not None:
+        left_fit = 0.3 * left_fit + 0.7 * init['last_fit'][0]
+    if init['last_fit'][1] is not None:
+        right_fit = 0.3 * right_fit + 0.7 * init['last_fit'][1]
+
+    init['last_fit'][0], init['last_fit'][1] = left_fit, right_fit
 
     ploty = np.linspace(0, warped.shape[0]-1, warped.shape[0])
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
@@ -240,11 +410,12 @@ def pipeline(image, save_image=False):
     left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
     right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
     y_eval = np.max(ploty)
-    # Calculate the new radii of curvature
-    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
-    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
-    # Now our radius of curvature is in meters
-    print(left_curverad, 'm', right_curverad, 'm')
+
+    if init['frameno'] % 10 == 0:
+        # Calculate the new radii of curvature
+        init['left_curverad'] = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+        init['right_curverad'] = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+    init['frameno'] += 1
 
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(warped).astype(np.uint8)
@@ -260,11 +431,17 @@ def pipeline(image, save_image=False):
 
     Minv = cv2.getPerspectiveTransform(dst, src)
     # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv, (undistorted_image.shape[1], undistorted_image.shape[0])) 
+    newwarp = cv2.warpPerspective(color_warp, Minv, (undistorted_image.shape[1], undistorted_image.shape[0]))
     # Combine the result with the original image
     result = cv2.addWeighted(undistorted_image, 1, newwarp, 0.3, 0)
 
-    if save_figure:
+    cv2.putText(
+        result,
+        'left/right radius: %.2f/%.2f m' %(init.get('left_curverad', '-'), init.get('right_curverad', '-')),
+        (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2, cv2.LINE_AA)
+
+
+    if debug:
         f, axs = plt.subplots(2, 3, figsize=(30, 10))
         f.tight_layout()
 
@@ -298,6 +475,8 @@ def pipeline(image, save_image=False):
         axs[1][2].imshow(result)
 
         f.savefig('figure.png')
+        if debug >= 1:
+            import pdb; pdb.set_trace()
     return result
 
 
@@ -315,9 +494,12 @@ def main():
     parser_undistort.add_argument('--action', type=str, default='undistort')
     parser_pipeline.add_argument('--action', type=str, default='pipeline')
     parser_video.add_argument('--action', type=str, default='video')
+
     parser_pipeline.add_argument('image', type=str)
+    parser_pipeline.add_argument('--debug', dest='debug', type=int, default=0)
     parser_video.add_argument('video_in', type=str)
     parser_video.add_argument('video_out', type=str)
+    parser_video.add_argument('--debug', dest='debug', type=int, default=0)
 
     arguments = parser.parse_args()
 
@@ -331,11 +513,11 @@ def main():
     elif arguments.action == 'pipeline':
         image = cv2.imread(arguments.image)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        pipeline(image, save_image=True)
+        pipeline({}, image, debug=arguments.debug)
     elif arguments.action == 'video':
         from moviepy.editor import VideoFileClip
-        video_in = VideoFileClip(arguments.video_in)
-        video_out = video_in.fl_image(pipeline)
+        video_in = VideoFileClip(arguments.video_in).subclip(0, 10)
+        video_out = video_in.fl_image(partial(pipeline, {}, debug=arguments.debug))
         video_out.write_videofile(arguments.video_out, audio=False)
 
 if __name__ == "__main__":
