@@ -13,6 +13,7 @@ matplotlib.use('svg')
 import matplotlib.pyplot as plt
 import numpy as np
 from functools import partial
+from collections import defaultdict
 from color import abs_sobel_thresh, mag_thresh, dir_threshold
 
 
@@ -90,8 +91,8 @@ def crop(image, crop_top=0, debug=0):
             [
                 [mask1.shape[1]-100, image.shape[0]],  # bottom right
                 [100, mask1.shape[0]],                 # bottom left
-                [500, crop_top],                           # top left
-                [image.shape[1]-500, crop_top],            # top right
+                [image.shape[1]//2-300, crop_top],                           # top left
+                [image.shape[1]//2+300, crop_top],            # top right
             ]
         ),
         # color
@@ -113,8 +114,8 @@ def crop(image, crop_top=0, debug=0):
         # color
         (255, 255, 255)
     )
-    cv2.bitwise_not(mask2, mask2)
-    out = cv2.bitwise_and(out, mask2)
+    # cv2.bitwise_not(mask2, mask2)
+    # out = cv2.bitwise_and(out, mask2)
     if debug >= 2:
         plt.imsave('windows.png', out)
         import pdb; pdb.set_trace()
@@ -170,10 +171,10 @@ def apply_color_transform(img):
     # channel3_mask = np.zeros_like(channel3)
 
     # Stack each channel
-    color_binary = np.dstack((channel1_mask, channel2_mask, channel3_mask)) * 255
+    color_binary = np.dstack((channel2_mask, channel3_mask, channel4_mask)) * 255
 
     binary = np.zeros_like(channel1)
-    binary[(channel2_mask == 1) & (hsv[:, :, 2] > 130) | (channel3_mask == 1) | (channel4_mask == 1) & (channel4 > 160)] = 1
+    binary[(channel2_mask == 1) & (hsv[:, :, 2] > 160) | (channel3_mask == 1) | (channel4_mask == 1) & (channel4 > 180)] = 1
 
     # plt.imsave('layer.png', binary)
     # import pdb; pdb.set_trace()
@@ -195,118 +196,12 @@ def transform_perspective(image, src, dst):
 
 def find_peaks(histogram):
     middle = histogram.shape[0] // 2
-    right = middle + np.argmax(histogram[middle:])
+    rel_right = np.argmax(histogram[middle:])
+    right = (middle + rel_right) if rel_right else 0
     left = np.argmax(histogram[:middle])
     magnitude_factor = 3
     ref = 'left' if histogram[left] > histogram[right] else 'right'
-    # if histogram[left] >= magnitude_factor * histogram[right]:
-    #     right = left + detected_width or 0
-    # elif histogram[right] >= magnitude_factor * histogram[left]:
-    #     left = right - detected_width or 0
-    # plt.plot(histogram)
-    # plt.savefig('windows.png')
-    # import pdb; pdb.set_trace()
     return [left, right, ref]
-
-
-def get_coordinates_conv(warped, init=None, nwindows=7, debug=0):
-
-    # window settings
-    window_width = 50
-    window_height = 80 # Break image into 9 vertical layers since image height is 720
-    margin = 50 # How much to slide left and right for searching
-
-    def window_mask(width, height, img_ref, center,level):
-        output = np.zeros_like(img_ref)
-        output[int(img_ref.shape[0]-(level+1)*height):int(img_ref.shape[0]-level*height),max(0,int(center-width/2)):min(int(center+width/2),img_ref.shape[1])] = 1
-        return output
-
-
-    def find_window_centroids(image, window_width, window_height, margin):
-        left_x_points = []
-        left_y_points = []
-        right_x_points = []
-        right_y_points = []
-        window = np.ones(window_width) # Create our window template that we will use for convolutions
-
-        # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
-        # and then np.convolve the vertical image slice with the window template
-        # Sum quarter bottom of image to get slice, could use a different ratio
-        l_sum = np.sum(image[int(image.shape[0]/2):,:int(image.shape[1]/2)], axis=0)
-        l_center = np.argmax(np.convolve(window,l_sum))-window_width/2
-
-        r_sum = np.sum(image[int(image.shape[0]/2):,int(image.shape[1]/2):], axis=0)
-        r_center = np.argmax(np.convolve(window,r_sum))-window_width/2+int(image.shape[1]/2)
-
-        if debug == 2:
-            debug_image = np.copy(image) * 255
-            debug_image = np.dstack((debug_image, debug_image, debug_image))
-            cv2.rectangle(
-                debug_image,
-                (0, int(image.shape[0]/2)),
-                (int(image.shape[1]/2), image.shape[0]),
-                (0, 255, 0), 2
-            )
-            cv2.rectangle(
-                debug_image,
-                (int(image.shape[1]/2), int(image.shape[0]/2)),
-                (image.shape[1], image.shape[0]),
-                (255, 100, 20), 2
-            )
-            cv2.drawMarker(debug_image, (int(l_center), image.shape[0]), color=(0,0,255), thickness=2)
-            cv2.drawMarker(debug_image, (int(r_center), image.shape[0]), color=(0,0,255), thickness=2)
-            plt.imsave('windows.png', debug_image)
-            import pdb; pdb.set_trace()
-
-        # Add what we found for the first layer
-        center_y = (image.shape[0]-window_height + image.shape[0]) // 2
-        left_x_points.append(l_center)
-        right_x_points.append(r_center)
-        left_y_points.append(center_y)
-        right_y_points.append(center_y)
-
-        # Go through each layer looking for max pixel locations
-        for level in range(1,(int)(image.shape[0]/window_height)):
-            # convolve the window into the vertical slice of the image
-            image_layer = np.sum(image[int(image.shape[0]-(level+1)*window_height):int(image.shape[0]-level*window_height),:], axis=0)
-            conv_signal = np.convolve(window, image_layer)
-
-            # Find the best left centroid by using past left center as a reference
-            # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
-            offset = window_width/2
-            l_min_index = int(max(l_center+offset-margin,0))
-            l_max_index = int(min(l_center+offset+margin,image.shape[1]))
-            l_center = np.argmax(conv_signal[l_min_index:l_max_index])+l_min_index-offset
-
-            # Find the best right centroid by using past right center as a reference
-            r_min_index = int(max(r_center+offset-margin,0))
-            r_max_index = int(min(r_center+offset+margin,image.shape[1]))
-            import pdb; pdb.set_trace()
-            r_center = np.argmax(conv_signal[r_min_index:r_max_index])+r_min_index-offset
-
-            if debug == 2:
-                debug_image = np.copy(image) * 255
-                debug_image = np.dstack((debug_image, debug_image, debug_image))
-                cv2.rectangle(
-                    debug_image,
-                    (0, int(image.shape[0]-(level+1)*window_height)),
-                    (image.shape[1], int(image.shape[0]-level*window_height)),
-                    (0, 255, 0), 2
-                )
-                center_y = (image.shape[0]-(level+1)*window_height + image.shape[0]-level*window_height) // 2
-                cv2.drawMarker(debug_image, (int(l_center), center_y), color=(0,0,255), thickness=2)
-                cv2.drawMarker(debug_image, (int(r_center), center_y), color=(0,0,255), thickness=2)
-                plt.imsave('windows.png', debug_image)
-                import pdb; pdb.set_trace()
-
-            left_x_points.append(l_center)
-            right_x_points.append(r_center)
-            left_y_points.append(center_y)
-            right_y_points.append(center_y)
-
-        return left_x_points, left_y_points, right_x_points, right_y_points
-
-    return find_window_centroids(warped, window_width, window_height, margin)
 
 
 def get_coordinates(warped, init=None, nwindows=7, debug=0):
@@ -317,6 +212,12 @@ def get_coordinates(warped, init=None, nwindows=7, debug=0):
     left_y_points = []
     right_x_points = []
     right_y_points = []
+
+    def compute_avg_diff(points):
+        if len(points) > 1:
+            return np.mean([(it2-it1) for (it1,it2) in zip(points[0::2], points[1::2])])
+        else:
+            return 0
 
     for window in range(nwindows):
 
@@ -332,82 +233,49 @@ def get_coordinates(warped, init=None, nwindows=7, debug=0):
         left_window = warped[window_top:window_bottom, left_window_left:left_window_right]
         right_window = warped[window_top:window_bottom, right_window_left:right_window_right]
 
-        left_nonzero_x = left_window.nonzero()[1]    # + left_window_left
-        right_nonzero_x = right_window.nonzero()[1]  # + right_window_left
-        left_nonzero_y = left_window.nonzero()[0]    # + window_top
-        right_nonzero_y = right_window.nonzero()[0]  # + window_top
-
-        left_x_mean = None
-        right_x_mean = None
-        left_y_mean = None
-        right_y_mean = None
-        left_magnitude = len(left_nonzero_x)
-        right_magnitude = len(right_nonzero_x)
-
-        if left_magnitude:
-            left_x_mean = int(np.mean(left_nonzero_x))
-            left_y_mean = int(np.mean(left_nonzero_y))
-        if right_magnitude:
-            right_x_mean = int(np.mean(right_nonzero_x))
-            right_y_mean = int(np.mean(right_nonzero_y))
-
         last_left_value_x = left_x_points[-1] if left_x_points else init['peaks'][0]
         last_left_value_y = window_top + (window_bottom - window_top) // 2
         last_right_value_x = right_x_points[-1] if right_x_points else init['peaks'][1]
         last_right_value_y = window_top + (window_bottom - window_top) // 2
 
-        if left_magnitude == right_magnitude == 0:
-            def compute_avg_diff(points):
-                if len(points) > 1:
-                    return np.mean([(it2-it1) for (it1,it2) in zip(points[0::2], points[1::2])])
-                else:
-                    return 0
-            left_value_x = int(last_left_value_x + compute_avg_diff(left_x_points))
-            right_value_x = int(last_right_value_x + compute_avg_diff(right_x_points))
-            left_value_y = window_top + (window_bottom - window_top) // 2
-            right_value_y = left_value_y
-            left_x_points.append(int(left_value_x))
-            left_y_points.append(int(left_value_y))
-            right_x_points.append(int(right_value_x))
-            right_y_points.append(int(right_value_y))
+        left_value_y = window_top + (window_bottom - window_top) // 2
+        right_value_y = window_top + (window_bottom - window_top) // 2
+
+        def get_value(nonzero, ref):
+            return ref + int(np.mean(nonzero))
+
+        left_nonzero_x = left_window.nonzero()[1]    # + left_window_left
+        right_nonzero_x = right_window.nonzero()[1]  # + right_window_left
+        left_nonzero_y = left_window.nonzero()[0]    # + window_top
+        right_nonzero_y = right_window.nonzero()[0]  # + window_top
+
+        left_magnitude = len(left_nonzero_x)
+        right_magnitude = len(right_nonzero_x)
+        magnitude_threshold = max(0.05 * max(left_magnitude, right_magnitude), 50)
+
+        if left_magnitude >= magnitude_threshold and right_magnitude < magnitude_threshold:
+            left_value_x = get_value(left_nonzero_x, left_window_left)
+            right_value_x = init['window'].get(window, {}).get('right', [None, None])[0] or (right_window_left + (left_value_x - left_window_left))
+            init['window'][window]['left'] = (left_value_x, left_value_y)
+        elif right_magnitude >= magnitude_threshold and left_magnitude < magnitude_threshold:
+            right_value_x = get_value(right_nonzero_x, right_window_left)
+            left_value_x = init['window'].get(window, {}).get('left', [None, None])[0] or (left_window_left + (right_value_x - right_window_left))
+            init['window'][window]['right'] = (right_value_x, right_value_y)
+        elif left_magnitude <= magnitude_threshold and right_magnitude <= magnitude_threshold:
+            left_value_x = init['window'].get(window, {}).get('left', [None, None])[0] or int(last_left_value_x + compute_avg_diff(left_x_points))
+            right_value_x = init['window'].get(window, {}).get('right', [None, None])[0] or int(last_right_value_x + compute_avg_diff(right_x_points))
         else:
-            ref = None
-            if left_x_mean and (not right_x_mean or right_magnitude < 50):
-                ref = 'left'
-                right_x_mean = left_x_mean
-                right_y_mean = left_y_mean
-            elif right_x_mean and (not left_x_mean or left_magnitude < 50):
-                ref = 'right'
-                left_x_mean = right_x_mean
-                left_y_mean = right_y_mean
-            elif not (left_x_mean and right_x_mean):
-                left_x_mean = last_left_value_x - left_window_left
-                left_y_mean = last_left_value_y - window_top
-                right_x_mean = last_right_value_x - right_window_left
-                right_y_mean = last_right_value_y - window_top
+            left_value_x = get_value(left_nonzero_x, left_window_left)
+            left_value_y = get_value(left_nonzero_y, window_top)
+            right_value_x = get_value(right_nonzero_x, right_window_left)
+            right_value_y = get_value(right_nonzero_y, window_top)
+            init['window'][window]['left'] = (left_value_x, left_value_y)
+            init['window'][window]['right'] = (right_value_x, right_value_y)
 
-            if ref == 'left':
-                left_value_x = left_x_mean + left_window_left
-                # right_value_x = left_value_x + init['lane_width']
-                right_value_x = right_window_left + left_x_mean
-                left_value_y = left_y_mean + window_top
-                right_value_y = left_value_y
-            elif ref == 'right':
-                right_value_x = right_x_mean + right_window_left
-                # left_value_x = right_value_x - init['lane_width']
-                left_value_x = left_window_left + right_x_mean
-                right_value_y = right_y_mean + window_top
-                left_value_y = right_value_y
-            else:
-                left_value_x = left_window_left + left_x_mean
-                right_value_x = right_window_left + right_x_mean
-                left_value_y = left_y_mean + window_top
-                right_value_y = right_y_mean + window_top
-
-            left_x_points.append(int(left_value_x))
-            left_y_points.append(int(left_value_y))
-            right_x_points.append(int(right_value_x))
-            right_y_points.append(int(right_value_y))
+        left_x_points.append(int(left_value_x))
+        left_y_points.append(int(left_value_y))
+        right_x_points.append(int(right_value_x))
+        right_y_points.append(int(right_value_y))
 
         if debug:
             debug_image = np.copy(warped) * 255
@@ -441,14 +309,13 @@ def pipeline(init, image, debug=0):
     color_binary_image, binary_image = apply_color_transform(undistorted_image)
     cropped_image = crop(np.copy(binary_image), 440, debug=debug)
     src_top_xoffset = 80
-    xoffset = 250
+    xoffset = 150
     shape = cropped_image.shape
     initial_bottom_diff = None
     image_center = image.shape[1] // 2
     lane_center = image_center
-    lane_width = 300
     crop_top = 510
-    while True and init['frameno'] == 0:
+    while True and not init['dst_found']:
         init['src'] = np.float32([
             [image_center+xoffset, shape[0]],  # bottom right
             [image_center-xoffset, shape[0]],           # bottom left
@@ -456,27 +323,34 @@ def pipeline(init, image, debug=0):
             [image_center+src_top_xoffset, crop_top],       # top right
         ])
         init['dst'] = np.float32([
-            [image_center+lane_width//2, shape[0]],  # bottom right
-            [image_center-lane_width//2, shape[0]],           # bottom left
-            [image_center-lane_width//2, 0],                  # top left
-            [image_center+lane_width//2, 0],         # top right
+            [image_center+90, shape[0]],  # bottom right
+            [image_center-90, shape[0]],           # bottom left
+            [image_center-90, 0],                  # top left
+            [image_center+90, 0],         # top right
         ])
         warped = transform_perspective(cropped_image, init['src'], init['dst'])
-        bottom_hist = np.sum(warped[(warped.shape[0]//2):,:], axis=0)
+
+        bottom_hist = np.sum(warped[(3*(warped.shape[0]//4)):warped.shape[0],:], axis=0)
         bottom_left, bottom_right, bottom_ref = find_peaks(bottom_hist)
-        top_hist = np.sum(warped[:(warped.shape[0]//2),:], axis=0)
+        if bottom_left and bottom_right:
+            init['bottom_diff'] = bottom_right - bottom_left
+        else:
+            break
+        top_hist = np.sum(warped[(2*(warped.shape[0]//4)):(3*(warped.shape[0]//4)),:], axis=0)
         top_left, top_right, top_ref = find_peaks(top_hist)
-        top_diff = top_right - top_left
-        bottom_diff = bottom_right - bottom_left
+        if top_left and top_right:
+            init['top_diff'] = top_right - top_left
+        else:
+            break
         if initial_bottom_diff is None:
-            initial_bottom_diff = bottom_diff
-        bottom_lane_center = (bottom_right - bottom_left) // 2 + bottom_left
-        bottom_lane_center_deviation = image_center - bottom_lane_center
-        top_lane_center = (top_right - top_left) // 2 + top_left
-        top_lane_center_deviation = image_center - top_lane_center
-        print("Bottom lane center: %s" %  bottom_lane_center)
-        print("Top lane center: %s" % top_lane_center)
-        print("Crop top: %s" % crop_top)
+            initial_bottom_diff = init['bottom_diff']
+        # bottom_lane_center = (bottom_right - bottom_left) // 2 + bottom_left
+        # bottom_lane_center_deviation = image_center - bottom_lane_center
+        # top_lane_center = (top_right - top_left) // 2 + top_left
+        # top_lane_center_deviation = image_center - top_lane_center
+        # print("Bottom lane center: %s" %  bottom_lane_center)
+        # print("Top lane center: %s" % top_lane_center)
+        # print("Crop top: %s" % crop_top)
         warped = transform_perspective(cropped_image, init['src'], init['dst'])
         if debug == 2:
             debug_image = np.copy(warped) * 255
@@ -492,33 +366,56 @@ def pipeline(init, image, debug=0):
             cv2.drawMarker(debug_image, tuple(init['dst'][2]), color=(255, 0, 255), thickness=5)
             cv2.drawMarker(debug_image, tuple(init['dst'][3]), color=(0, 255, 0), thickness=5)
             plt.imsave('windows.png', debug_image)
-            print(top_diff)
-            print(bottom_diff)
-            print(src_top_xoffset)
+            print("Top difference: %s" % init['top_diff'])
+            print("Bottom difference: %s" % init['bottom_diff'])
+            print("Top offset: %s" % src_top_xoffset)
             import pdb; pdb.set_trace()
-        if top_diff < initial_bottom_diff:
-            src_top_xoffset -= 10
+        if init['top_diff'] < init['bottom_diff'] - 7:
+            src_top_xoffset -= init['tr']
+        elif init['top_diff'] > init['bottom_diff'] + 7:
+            src_top_xoffset += init['tr']
+            init['tr'] = init['tr'] - init['tr'] // 2
         else:
+            init['dst_found'] = True
             break
 
+    if not init['dst_found']:
+        return image
     warped = transform_perspective(cropped_image, init['src'], init['dst'])
+
+    eroded = cv2.erode(warped, np.ones((17, 1)))
+    warped = cv2.dilate(eroded, np.ones((31, 7)))
+    warped = cv2.dilate(eroded, np.ones((31, 7)))
 
     # clean
     # warped[:, :300] = 0
-    # warped[:, 500:850] = 0
-    # warped[:, 1100:] = 0
+    # warped[:, 400:700] = 0
+    # warped[:, 900:] = 0
 
-    if init['lane_width'] is None:
+    if not init['peaks'][0] or not init['peaks'][1]:
         bottom_hist = np.sum(warped[(warped.shape[0]//2):,:], axis=0)
         init['peaks'] = find_peaks(bottom_hist)
         top_hist = np.sum(warped[:(warped.shape[0]//2),:], axis=0)
         top_left, top_right, top_ref = find_peaks(top_hist)
-        init['lane_width'] = ((init['peaks'][1] - init['peaks'][0]) + (top_right - top_left)) // 2
+
+        curr_lane_width = init['lane_width']
+        if init['peaks'][0] and init['peaks'][1]:
+            curr_lane_width = ((init['peaks'][1] - init['peaks'][0]) + (top_right - top_left)) // 2
+        init['lane_width'] = int(init['lane_width'] * 0.1 + curr_lane_width * 0.9)
+
+        if init['peaks'][0] and not init['peaks'][1]:
+            init['peaks'][1] = init['peaks'][0] + init['lane_width']
+        elif init['peaks'][1] and not init['peaks'][0]:
+            init['peaks'][1] = init['peaks'][1] - init['lane_width']
 
     nwindows = 7
 
     left_x_points, left_y_points, right_x_points, right_y_points = get_coordinates(
             warped, init=init, nwindows=nwindows, debug=debug)
+
+    curr_lane_width = np.mean(np.array(right_x_points) - np.array(left_x_points))
+    init['lane_width'] = int(init['lane_width'] * 0.1 + curr_lane_width * 0.9)
+    print("Lane width: %s" % init['lane_width'])
 
     init['peaks'][0], init['peaks'][1] = int(left_x_points[0]), int(right_x_points[0])
 
@@ -643,16 +540,21 @@ def main():
     parser_video.add_argument('video_in', type=str)
     parser_video.add_argument('video_out', type=str)
     parser_video.add_argument('--debug', dest='debug', type=int, default=0)
-    parser_video.add_argument('--start', type=float)
-    parser_video.add_argument('--end', type=float)
+    parser_video.add_argument('--start', type=float, default=-1)
+    parser_video.add_argument('--end', type=float, default=-1)
 
     arguments = parser.parse_args()
 
     init = {}
     init.setdefault('frameno', 0)
-    init.setdefault('lane_width', None)
+    init.setdefault('lane_width', 520)
     init.setdefault('peaks', [None, None, None])
     init.setdefault('last_fit', [None, None])
+    init.setdefault('dst_found', False)
+    init.setdefault('bottom_diff', None)
+    init.setdefault('top_diff', None)
+    init.setdefault('tr', 10)
+    init.setdefault('window', defaultdict(dict))
 
     if arguments.action == 'calibrate':
         calibrate([cv2.imread(it) for it in glob.glob('camera_cal/*')])
@@ -668,7 +570,7 @@ def main():
     elif arguments.action == 'video':
         from moviepy.editor import VideoFileClip
         video_in = VideoFileClip(arguments.video_in)
-        if arguments.start and arguments.end:
+        if arguments.start >= 0 and arguments.end > arguments.start:
             video_in = video_in.subclip(arguments.start, arguments.end)
         video_out = video_in.fl_image(partial(pipeline, init, debug=arguments.debug))
         video_out.write_videofile(arguments.video_out, audio=False)
