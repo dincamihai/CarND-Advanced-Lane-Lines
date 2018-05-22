@@ -466,10 +466,15 @@ def pipeline(init, image, debug=0, debug_frame=0):
 
     lane_center = (right_x_points[0] - left_x_points[0]) // 2 + left_x_points[0]
     image_center = image.shape[1] // 2
-    lane_center_deviation = image_center - lane_center
+    lane_center_deviation = (lane_center - image_center) * xm_per_pix
+    deviation_side = 'left' if lane_center_deviation < 0 else 'right'
+    deviation_side = '-' if not lane_center_deviation else deviation_side
     cv2.putText(
         result,
-        'left/right radius: %.2f/%.2f m deviation: %.2f' %(init.get('left_curverad', '-'), init.get('right_curverad', '-'), lane_center_deviation),
+        'left/right radius: %.2f/%.2f m deviation: %.2f m %s' %(
+            init.get('left_curverad', None),
+            init.get('right_curverad', None),
+            lane_center_deviation, deviation_side),
         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2, cv2.LINE_AA)
 
 
