@@ -14,12 +14,12 @@ The goals / steps of this project are the following:
 [//]: # (Image References)
 
 [image2]: ./test_images/test1.jpg "Original Image"
-[image2-undist]: ./writeup-images/test1-undist.png "Undistorted Image"
-[image2-binary]: ./writeup-images/test1-binary.png "Binary Undistorted Image"
-[image2-warped]: ./writeup-images/test1-warped.png "Binary Perspective Transformed Image"
+[image2-undist]: ./writeup-examples/test1-undist.png "Undistorted Image"
+[image2-binary]: ./writeup-examples/test1-binary.png "Binary Undistorted Image"
+[image2-warped]: ./writeup-examples/test1-warped.png "Binary Perspective Transformed Image"
 [orig-test2]: ./test_images/straight_lines1.jpg "Original Test #2 Image"
-[perspective-test2]: ./writeup-images/perspective-test2.png "Binary Perspective Transformed Test Image #2"
-[plotted-result]: ./writeup-images/result.png "Plotted result"
+[perspective-test2]: ./writeup-examples/perspective-test2.png "Binary Perspective Transformed Test Image #2"
+[plotted-result]: ./writeup-examples/result.png "Plotted result"
 [image4]: ./examples/warped_straight_lines.jpg "Warp Example"
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
