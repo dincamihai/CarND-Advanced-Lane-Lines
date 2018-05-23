@@ -98,21 +98,18 @@ The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Li
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-The code for identifying the lane-line positions can be found here:
-
-TODO: add link to code here
+The code for identifying the lane-line positions can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L202-L301
 
 To identify the lane lines I'm using the histogram of the bottom half of the image to find the starting points and then I'm using the sliding window technique to find the next points.
-I am using 7 windows per image per line which finds 7 (x, y) pairs for each left and right lines.
-When no pixels are found, I am estimating based on average variation of the previous points found and previous points found in that area.
-When a window contains a number of pixels above a relative threshold, I am computing the mean x and y values of the non-zero pixels.
-At the same time I am also updating the global dictionary that keeps track of detected pixel for that current window y layer.
+I am using 7 windows per image per line.
+When a window contains a number of pixels above a relative threshold, I am computing the mean x and y values of the non-zero pixels and I am adding 8 points (all have the found `x` and `y` in [found_y-4, found_y+4]) https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L262-L273
+I am doing this so that I don't risk having too few points which would result in a wrong polinomial fit.
 
-For each frame, I cumulate the left and right (x, y) pairs (both detected and estimated).
+For each frame, I cumulate the left and right (x, y) pairs and I compute and store the lane_width.
 I then use them to fit a 2nd grade polynomial and to update the lane-width.
-I'm also using an attenuation coeficient for the polynomials in order to smooth out big rapid variations.
+I'm also using an attenuation coeficient for the polynomials in order to smooth out variations.
 
-TODO: add link to code here
+The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L202-L301
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -120,19 +117,16 @@ In order to calculate the radius of curvature I've used this formula:
 
 TODO: add formula here
 
-The implementation can be seen here:
-
-TODO: add link to code here
+The code implementation can be seen here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/utils.py#L43-L50
 
 In order to show the curvature in meters, I've used scaling factors to convert from pixels to meters.
+https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/utils.py#L45
 
-TODO: add link to code here
+The scaling factors can be seen here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/utils.py#L59-L61
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-The implementation can be seen here:
-
-TODO: add link to code here
+The implementation can be seen here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/utils.py#L63-L81
 
 Example of result image:
 
