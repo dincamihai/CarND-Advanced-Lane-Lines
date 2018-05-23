@@ -24,6 +24,8 @@ The goals / steps of this project are the following:
 [image5]: ./examples/color_fit_lines.jpg "Fit Visual"
 [image6]: ./examples/example_output.jpg "Output"
 [video1]: ./project_video.mp4 "Video"
+[processed-video]: ./processed_video.mp4 "Processed Video"
+
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
@@ -61,7 +63,7 @@ Example: Original - Transformed
 
 ![alt text][image2-undist] ![alt text][image2-binary]
 
-The code can be viewed here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L142-L191
+The code can be viewed here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L142-L189
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
@@ -94,22 +96,20 @@ And the transformation for the test#1 image looks like this:
 Example: Binary - Perspective Transformation
 ![alt text][binary] ![alt text][warped]
 
-The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L194-L199
+The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L192-L197
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-The code for identifying the lane-line positions can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L202-L301
+The code for identifying the lane-line positions can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L200-L299
 
 To identify the lane lines I'm using the histogram of the bottom half of the image to find the starting points and then I'm using the sliding window technique to find the next points.
 I am using 7 windows per image per line.
-When a window contains a number of pixels above a relative threshold, I am computing the mean x and y values of the non-zero pixels and I am adding 8 points (all have the found `x` and `y` in [found_y-4, found_y+4]) https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L262-L273
+When a window contains a number of pixels above a relative threshold, I am computing the mean x and y values of the non-zero pixels and I am adding 8 points (all have the found `x` and `y` in [found_y-4, found_y+4]) https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L260-L271
 I am doing this so that I don't risk having too few points which would result in a wrong polinomial fit.
 
 For each frame, I cumulate the left and right (x, y) pairs and I compute and store the lane_width.
 I then use them to fit a 2nd grade polynomial and to update the lane-width.
 I'm also using an attenuation coeficient for the polynomials in order to smooth out variations.
-
-The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L202-L301
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -137,7 +137,7 @@ Example of result image:
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-https://raw.githubusercontent.com/dincamihai/CarND-Advanced-Lane-Lines/master/processed_video.mp4
+![Output video][processed-video]
 
 ---
 
