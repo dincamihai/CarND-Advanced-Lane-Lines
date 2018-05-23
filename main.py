@@ -15,6 +15,7 @@ import numpy as np
 from functools import partial
 from collections import defaultdict
 from color import abs_sobel_thresh, mag_thresh, dir_threshold
+from utils import annotate_image, get_fit, find_peaks, compute_avg_diff
 
 
 def save_figure(images, fname=None, cmaps=[]):
@@ -107,8 +108,8 @@ def crop(image, crop_top=0, debug=0):
             [
                 [mask2.shape[1]-350, image.shape[0]],  # bottom right
                 [350, mask2.shape[0]],                 # bottom left
-                [640, crop_top+50],                           # top left
-                [image.shape[1]-640, crop_top+50],            # top right
+                [140, crop_top+50],                           # top left
+                [image.shape[1]-140, crop_top+50],            # top right
             ]
         ),
         # color
@@ -198,23 +199,7 @@ def transform_perspective(image, src, dst):
     return warped
 
 
-def find_peaks(histogram):
-    middle = histogram.shape[0] // 2
-    rel_right = np.argmax(histogram[middle:])
-    right = (middle + rel_right) if rel_right else 0
-    left = np.argmax(histogram[:middle])
-    magnitude_left = histogram[left]
-    magnitude_right = histogram[right]
-    default_lane_width = 520
-    if magnitude_left < 50:
-        left = right - default_lane_width
-    if magnitude_right < 50:
-        right = left + default_lane_width
-    ref = 'left' if magnitude_left > magnitude_right else 'right'
-    return [left, right, ref]
-
-
-def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_frame=0):
+def identify_lines(warped, peaks, nwindows=7, debug=0):
     window_height = warped.shape[0] // nwindows
     window_width = 200
 
@@ -222,12 +207,6 @@ def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_fra
     left_y_points = []
     right_x_points = []
     right_y_points = []
-
-    def compute_avg_diff(points):
-        if len(points) > 1:
-            return np.mean([(it2-it1) for (it1,it2) in zip(points[0::2], points[1::2])])
-        else:
-            return 0
 
     for window in range(nwindows):
 
@@ -243,6 +222,11 @@ def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_fra
         left_window = warped[window_top:window_bottom, left_window_left:left_window_right]
         right_window = warped[window_top:window_bottom, right_window_left:right_window_right]
 
+        last_left_value_x = left_x_points[-1] if left_x_points else peaks[0]
+        last_left_value_y = window_top + (window_bottom - window_top) // 2
+        last_right_value_x = right_x_points[-1] if right_x_points else peaks[1]
+        last_right_value_y = window_top + (window_bottom - window_top) // 2
+
         left_value_y = window_top + (window_bottom - window_top) // 2
         right_value_y = window_top + (window_bottom - window_top) // 2
 
@@ -256,24 +240,17 @@ def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_fra
 
         left_magnitude = len(left_nonzero_x)
         right_magnitude = len(right_nonzero_x)
-        magnitude_threshold = max(0.05 * max(left_magnitude, right_magnitude), 50)
+        magnitude_threshold = max(0.1 * max(left_magnitude, right_magnitude), 50)
 
-        last_left_value_x = left_x_points[-1] if left_x_points else peaks[0]
-        last_left_value_y = window_top + (window_bottom - window_top) // 2
-        last_right_value_x = right_x_points[-1] if right_x_points else peaks[1]
-        last_right_value_y = window_top + (window_bottom - window_top) // 2
+        left_value_x = None
+        right_value_x = None
 
         if left_magnitude >= magnitude_threshold and right_magnitude < magnitude_threshold:
             left_value_x = get_value(left_nonzero_x, left_window_left)
-            right_value_x = int(last_right_value_x + compute_avg_diff(right_x_points))
-            right_value_x = init['window'].get(window, {}).get('right', [None, None])[0] or right_value_x
-            init['window'][window]['left'] = (left_value_x, left_value_y)
         elif right_magnitude >= magnitude_threshold and left_magnitude < magnitude_threshold:
             right_value_x = get_value(right_nonzero_x, right_window_left)
-            left_value_x = int(last_left_value_x + compute_avg_diff(left_x_points))
-            left_value_x = init['window'].get(window, {}).get('left', [None, None])[0] or left_value_x
-            init['window'][window]['right'] = (right_value_x, right_value_y)
         elif left_magnitude <= magnitude_threshold and right_magnitude <= magnitude_threshold:
+            pass
             left_value_x = int(last_left_value_x + compute_avg_diff(left_x_points))
             right_value_x = int(last_right_value_x + compute_avg_diff(right_x_points))
         else:
@@ -281,19 +258,27 @@ def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_fra
             left_value_y = get_value(left_nonzero_y, window_top)
             right_value_x = get_value(right_nonzero_x, right_window_left)
             right_value_y = get_value(right_nonzero_y, window_top)
-            init['window'][window]['left'] = (left_value_x, left_value_y)
-            init['window'][window]['right'] = (right_value_x, right_value_y)
 
-        left_x_points.append(int(left_value_x))
-        left_y_points.append(int(left_value_y))
-        right_x_points.append(int(right_value_x))
-        right_y_points.append(int(right_value_y))
+        if left_value_x is not None:
+            for idx in range(4):
+                left_x_points.append(int(left_value_x))
+                left_y_points.append(int(left_value_y-1))
+                left_x_points.append(int(left_value_x))
+                left_y_points.append(int(left_value_y+1))
+        if right_value_x is not None:
+            for idx in range(4):
+                right_x_points.append(int(right_value_x))
+                right_y_points.append(int(right_value_y-idx))
+                right_x_points.append(int(right_value_x))
+                right_y_points.append(int(right_value_y+idx))
 
-        if debug and init['frameno'] >= debug_frame:
+        if debug:
             debug_image = np.copy(warped) * 255
             debug_image = np.dstack((debug_image, debug_image, debug_image))
-            cv2.drawMarker(debug_image, (left_value_x, left_value_y), color=(0,0,255), thickness=2)
-            cv2.drawMarker(debug_image, (right_value_x, right_value_y), color=(255,0,0), thickness=2)
+            if left_value_x is not None:
+                cv2.drawMarker(debug_image, (left_value_x, left_value_y), color=(0,0,255), thickness=2)
+            if right_value_x is not None:
+                cv2.drawMarker(debug_image, (right_value_x, right_value_y), color=(255,0,0), thickness=2)
             cv2.rectangle(
                 debug_image,
                 (left_window_left, window_top),
@@ -316,204 +301,31 @@ def identify_lines(warped, init=None, peaks=None, nwindows=7, debug=0, debug_fra
     return left_x_points, left_y_points, right_x_points, right_y_points
 
 
-def pipeline(init, image, debug=0, debug_frame=0):
+def pipeline(init, image, debug=0):
     init['frameno'] += 1
     [undistorted_image] = undistort([image])
     color_binary_image, binary_image = apply_color_transform(undistorted_image)
     cropped_image = crop(np.copy(binary_image), 440, debug=debug)
-    src_top_xoffset = 80
-    xoffset = 150
-    shape = cropped_image.shape
-    initial_bottom_diff = None
-    image_center = image.shape[1] // 2
-    lane_center = image_center
-    crop_top = 510
-    while True and not init['dst_found']:
-        init['src'] = np.float32([
-            [image_center+xoffset, shape[0]],  # bottom right
-            [image_center-xoffset, shape[0]],           # bottom left
-            [image_center-src_top_xoffset, crop_top],       # top left
-            [image_center+src_top_xoffset, crop_top],       # top right
-        ])
-        init['dst'] = np.float32([
-            [image_center+150, shape[0]],  # bottom right
-            [image_center-150, shape[0]],           # bottom left
-            [image_center-150, 0],                  # top left
-            [image_center+150, 0],         # top right
-        ])
-        warped = transform_perspective(cropped_image, init['src'], init['dst'])
-
-        bottom_hist = np.sum(warped[(3*(warped.shape[0]//4)):warped.shape[0],:], axis=0)
-        bottom_left, bottom_right, bottom_ref = find_peaks(bottom_hist)
-
-        if not bottom_left or not bottom_right:
-            break
-
-        def find_trasfrom_points(init, warped, bottom_left, bottom_right):
-            left_x_points, left_y_points, right_x_points, right_y_points = identify_lines(
-                warped, init=init, peaks=(bottom_left, bottom_right), nwindows=7)
-            return [
-                [left_x_points[0], left_y_points[0]],
-                [right_x_points[0], right_y_points[0]],
-                [left_x_points[-1], left_y_points[-1]],
-                [right_x_points[-1], right_y_points[-1]]
-            ]
-
-        bottom_left, bottom_right, top_left, top_right = find_trasfrom_points(
-            init, warped, bottom_left, bottom_right)
-        init['bottom_diff'] = bottom_right[0] - bottom_left[0]
-        init['top_diff'] = top_right[0] - top_left[0]
-        init['peaks'] = [bottom_left, bottom_right, bottom_ref]
-
-        init['src1'] = np.float32([bottom_right, bottom_left, top_left, top_right])
-
-        if initial_bottom_diff is None:
-            initial_bottom_diff = init['bottom_diff']
-
-        warped = transform_perspective(warped, init['src1'], init['dst'])
-        if debug == 2:
-            debug_image = np.copy(warped) * 255
-            debug_image = np.dstack((debug_image, debug_image, debug_image))
-
-            cv2.drawMarker(debug_image, tuple(init['src'][0]), color=(0, 255, 255), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['src'][1]), color=(255, 255, 0), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['src'][2]), color=(255, 0, 255), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['src'][3]), color=(0, 255, 0), thickness=5)
-
-            cv2.drawMarker(debug_image, tuple(init['dst'][0]), color=(0, 255, 255), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['dst'][1]), color=(255, 255, 0), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['dst'][2]), color=(255, 0, 255), thickness=5)
-            cv2.drawMarker(debug_image, tuple(init['dst'][3]), color=(0, 255, 0), thickness=5)
-            plt.imsave('windows.png', debug_image)
-            print("Top difference: %s" % init['top_diff'])
-            print("Bottom difference: %s" % init['bottom_diff'])
-            print("Top offset: %s" % src_top_xoffset)
-            import pdb; pdb.set_trace()
-
-        init['dst_found'] = True
-
-    if not init['dst_found']:
-        return image
     warped = transform_perspective(cropped_image, init['src'], init['dst'])
-    warped = transform_perspective(warped, init['src1'], init['dst'])
 
-    eroded = cv2.erode(warped, np.ones((3, 3)))
-    warped = cv2.dilate(eroded, np.ones((1, 7)))
+    # eroded = cv2.erode(warped, np.ones((3, 3)))
+    warped = cv2.dilate(warped, np.ones((7, 3)))
 
-    # clean
-    # warped[:, :300] = 0
-    # warped[:, 400:700] = 0
-    # warped[:, 900:] = 0
+    if not init['peaks'][0] or not init['peaks'][1]:
+        init['peaks'] = find_peaks(warped, init['lane_width'])
 
     left_x_points, left_y_points, right_x_points, right_y_points = identify_lines(
-            warped, init=init, peaks=[500, 940], nwindows=7, debug=debug, debug_frame=debug_frame)
+            warped, init['peaks'], nwindows=7, debug=debug)
 
-    init['peaks'][0], init['peaks'][1] = int(left_x_points[0]), int(right_x_points[0])
+    if len(left_x_points) and len(right_x_points):
+        curr_lane_width = right_x_points[0] - left_x_points[0]
+        init['lane_width'] = int(init['lane_width'] * 0.1 + curr_lane_width * 0.9)
+        init['peaks'] = [int(left_x_points[0]), int(right_x_points[0])]
 
-    # print(list(zip(left_x_points, left_y_points)))
-    # print(list(zip(right_x_points, right_y_points)))
-    left_fit = np.polyfit(left_y_points, left_x_points, 2)
-    right_fit = np.polyfit(right_y_points, right_x_points, 2)
-    print("{0:.4f} {0:.4f} {0:.4f}".format(*(right_fit - left_fit)))
+    init['last_fit'][0] = get_fit(left_x_points, left_y_points, init.get('last_fit', [None, None])[0])
+    init['last_fit'][1] = get_fit(right_x_points, right_y_points, init.get('last_fit', [None, None])[1])
 
-    curve_attenuation_factor = 0.1
-    if init['last_fit'][0] is not None:
-        left_fit = curve_attenuation_factor * left_fit + (1-curve_attenuation_factor) * init['last_fit'][0]
-    if init['last_fit'][1] is not None:
-        right_fit = curve_attenuation_factor * right_fit + (1-curve_attenuation_factor) * init['last_fit'][1]
-
-    init['last_fit'][0], init['last_fit'][1] = left_fit, right_fit
-
-    ploty = np.linspace(0, warped.shape[0]-1, warped.shape[0])
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
-    # save_figure([image, binary_image, warped], fname='figure.png', cmaps=[None, None, 'gray'])
-
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
-
-    # Fit new polynomials to x,y in world space
-    left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
-    right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
-    y_eval = np.max(ploty)
-
-    if init['frameno'] % 30 == 0:
-        # Calculate the new radii of curvature
-        init['left_curverad'] = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
-        init['right_curverad'] = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
-
-    # Create an image to draw the lines on
-    warp_zero = np.zeros_like(warped).astype(np.uint8)
-    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
-
-    # Recast the x and y points into usable format for cv2.fillPoly()
-    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-    pts = np.hstack((pts_left, pts_right))
-
-    # Draw the lane onto the warped blank image
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
-
-    Minv1 = cv2.getPerspectiveTransform(init['dst'], init['src1'])
-    Minv = cv2.getPerspectiveTransform(init['dst'], init['src'])
-    # Warp the blank back to original image space using inverse perspective matrix (Minv)
-    newwarp = cv2.warpPerspective(color_warp, Minv1, (undistorted_image.shape[1], undistorted_image.shape[0]))
-    newwarp = cv2.warpPerspective(newwarp, Minv, (undistorted_image.shape[1], undistorted_image.shape[0]))
-    # Combine the result with the original image
-    result = cv2.addWeighted(undistorted_image, 1, newwarp, 0.3, 0)
-
-    lane_center = (right_x_points[0] - left_x_points[0]) // 2 + left_x_points[0]
-    image_center = image.shape[1] // 2
-    lane_center_deviation = (lane_center - image_center) * xm_per_pix
-    deviation_side = 'left' if lane_center_deviation < 0 else 'right'
-    deviation_side = '-' if not lane_center_deviation else deviation_side
-    cv2.putText(
-        result,
-        'left/right radius: %.2f/%.2f m deviation: %.2f m %s' %(
-            init.get('left_curverad', None),
-            init.get('right_curverad', None),
-            lane_center_deviation, deviation_side),
-        (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2, cv2.LINE_AA)
-
-
-    if debug and init['frameno'] >= debug_frame:
-        f, axs = plt.subplots(2, 3, figsize=(30, 10))
-        f.tight_layout()
-
-        axs[0][0].imshow(image)
-        axs[0][1].imshow(color_binary_image)
-        axs[0][2].imshow(binary_image, cmap='gray')
-
-        axs[1][0].imshow(cropped_image, cmap='gray')
-        axs[1][1].imshow(warped, cmap='gray')
-
-        axs[1][0].plot(*init['src'][0], 'o')
-        axs[1][0].plot(*init['src'][1], '*')
-        axs[1][0].plot(*init['src'][2], 'x')
-        axs[1][0].plot(*init['src'][3], '+')
-
-        axs[1][1].plot(*init['dst'][0], 'o')
-        axs[1][1].plot(*init['dst'][1], '*')
-        axs[1][1].plot(*init['dst'][2], 'x')
-        axs[1][1].plot(*init['dst'][3], '+')
-
-        # axs[1][2].imshow(warped, cmap='gray')
-        axs[1][1].plot(left_fitx, ploty, color='yellow')
-        axs[1][1].plot(right_fitx, ploty, color='yellow')
-
-        axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
-        axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
-        plt.xlim(0, 1280)
-        plt.ylim(720, 0)
-        axs[1][2].imshow(result)
-
-        f.savefig('figure.png')
-        if debug >= 1:
-            plt.imsave('frame.png', image)
-            import pdb; pdb.set_trace()
-
+    result = annotate_image(init, warped, undistorted_image, left_x_points, right_x_points, debug=debug)
     return result
 
 
@@ -537,7 +349,6 @@ def main():
     parser_video.add_argument('video_in', type=str)
     parser_video.add_argument('video_out', type=str)
     parser_video.add_argument('--debug', dest='debug', type=int, default=0)
-    parser_video.add_argument('--debug-frame', dest='debug_frame', type=int, default=0)
     parser_video.add_argument('--start', type=float, default=-1)
     parser_video.add_argument('--end', type=float, default=-1)
 
@@ -545,17 +356,26 @@ def main():
 
     init = {}
     init.setdefault('frameno', -1)
+    init.setdefault('lane_width', 410)
     init.setdefault('peaks', [None, None, None])
     init.setdefault('last_fit', [None, None])
     init.setdefault('bottom_diff', None)
     init.setdefault('top_diff', None)
     init.setdefault('tr', 10)
     init.setdefault('window', defaultdict(dict))
-    init.setdefault('src', None)
-    init.setdefault('dst', None)
-    init.setdefault('dst_found', False)
-    init.setdefault('left_curverad', None)
-    init.setdefault('right_curverad', None)
+    src_top_xoffset = 21
+    init['src'] = np.float32([
+        [ 880.,  700.],
+        [ 400.,  700.],
+        [ 590. + src_top_xoffset,  455.],
+        [ 690. - src_top_xoffset,  455.]
+    ])
+    init['dst'] = np.float32([
+        [ 770.,  720.],
+        [ 530.,  720.],
+        [ 530.,  0.],
+        [ 770.,  0.]
+    ])
 
     if arguments.action == 'calibrate':
         calibrate([cv2.imread(it) for it in glob.glob('camera_cal/*')])
@@ -566,27 +386,13 @@ def main():
             save_figure(pair)
     elif arguments.action == 'pipeline':
         image = cv2.imread(arguments.image)
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        init['src'] = np.float32([
-            [ 790.,  720.],
-            [ 490.,  720.],
-            [ 591.,  510.],
-            [ 689.,  510.]
-        ])
-        init['dst'] = np.float32([
-            [ 730.,  720.],
-            [ 550.,  720.],
-            [ 550.,    0.],
-            [ 730.,    0.]
-        ])
-        init['dst_found'] = True
         pipeline(init, image, debug=arguments.debug)
     elif arguments.action == 'video':
         from moviepy.editor import VideoFileClip
         video_in = VideoFileClip(arguments.video_in)
         if arguments.start >= 0 and arguments.end > arguments.start:
             video_in = video_in.subclip(arguments.start, arguments.end)
-        video_out = video_in.fl_image(partial(pipeline, init, debug=arguments.debug, debug_frame=arguments.debug_frame))
+        video_out = video_in.fl_image(partial(pipeline, init, debug=arguments.debug))
         video_out.write_videofile(arguments.video_out, audio=False)
 
 if __name__ == "__main__":
