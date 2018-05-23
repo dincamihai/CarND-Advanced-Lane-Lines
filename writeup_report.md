@@ -145,14 +145,11 @@ https://raw.githubusercontent.com/dincamihai/CarND-Advanced-Lane-Lines/master/pr
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-The automated perspective transform was implemented because hardcoded parameters did not result in paralel lines in the challenge videos.
-It is only enabled when processing videos and, depending on the first frames, if the left and right lines are not identifiable, it might skip some frames until it finds the information needed and only then the detected lane area will be projected over the original image.
-
 The current implementation does not work well with sharp curves, especially when one of the lines disappears from the image (eg: hard challenge video)
 One way to overcome this would be to identify situations like this based on the hight curvature of the visible line.
 
-Onother problem that the current implementation has is large areas with shadows and bright spots. The lines are not well identified in those cases.
-To overcome this, the part that takes care of generating the binary image needs to be tweaked more.
-The challenge would be to find a way that works in all conditions. The histogram equalisation might help here: https://docs.opencv.org/3.1.0/d5/daf/tutorial_py_histogram_equalization.html
+Onother problem that I had was identifying lines in images with shadows and bright spots. 
+To overcome this, I'm using histogram equalization: https://docs.opencv.org/3.1.0/d5/daf/tutorial_py_histogram_equalization.html
+https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L153-L154
 
-I also tried erosion and dilation in order to remove noise from the binary image but I decided to use `cv2.bilateralFilter` https://docs.opencv.org/2.4/modules/imgproc/doc/filtering.html?highlight=bilateralfilter#bilateralfilter
+I also looked at `cv2.bilateralFilter` https://docs.opencv.org/2.4/modules/imgproc/doc/filtering.html?highlight=bilateralfilter#bilateralfilter in order to remove noise from the binary image but I decided to not use it for the submision.
