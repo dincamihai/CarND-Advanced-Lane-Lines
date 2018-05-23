@@ -13,7 +13,7 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image2]: ./test_images/test1.jpg "Original Image"
+[image2]: ./test_images/test2.jpg "Original Image"
 [image2-undist]: ./writeup-examples/undist.png "Undistorted Image"
 [image2-binary]: ./writeup-examples/binary.png "Binary Undistorted Image"
 [image2-warped]: ./writeup-examples/warped.png "Binary Perspective Transformed Image"
