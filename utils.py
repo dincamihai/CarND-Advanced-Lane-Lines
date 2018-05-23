@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from functools import partial
+import matplotlib.pyplot as plt
 
 
 def compute_avg_diff(points):
@@ -92,43 +93,7 @@ def annotate_image(init, warped, undistorted_image, left_x_points, right_x_point
         result,
         'radius: %.2f m deviation: %.2f m %s' %(
         init.get('curverad', None),
-        lane_center_deviation, deviation_side),
+        abs(lane_center_deviation), deviation_side),
         (10, 50), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2, cv2.LINE_AA
     )
-
-    if debug:
-        f, axs = plt.subplots(2, 3, figsize=(30, 10))
-        f.tight_layout()
-
-        axs[0][0].imshow(image)
-        axs[0][1].imshow(color_binary_image)
-        axs[0][2].imshow(binary_image, cmap='gray')
-
-        axs[1][0].imshow(cropped_image, cmap='gray')
-        axs[1][1].imshow(warped, cmap='gray')
-
-        axs[1][0].plot(*init['src'][0], 'o')
-        axs[1][0].plot(*init['src'][1], '*')
-        axs[1][0].plot(*init['src'][2], 'x')
-        axs[1][0].plot(*init['src'][3], '+')
-
-        axs[1][1].plot(*init['dst'][0], 'o')
-        axs[1][1].plot(*init['dst'][1], '*')
-        axs[1][1].plot(*init['dst'][2], 'x')
-        axs[1][1].plot(*init['dst'][3], '+')
-
-        # axs[1][2].imshow(warped, cmap='gray')
-        axs[1][1].plot(left_fitx, ploty, color='yellow')
-        axs[1][1].plot(right_fitx, ploty, color='yellow')
-
-        axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
-        axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
-        plt.xlim(0, 1280)
-        plt.ylim(720, 0)
-        axs[1][2].imshow(result)
-
-        f.savefig('figure.png')
-        if debug >= 1:
-            plt.imsave('frame.png', image)
-            import pdb; pdb.set_trace()
-    return result
+    return result, ploty, left_fitx, right_fitx

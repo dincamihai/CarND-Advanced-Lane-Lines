@@ -262,9 +262,9 @@ def identify_lines(warped, peaks, nwindows=7, debug=0):
         if left_value_x is not None:
             for idx in range(4):
                 left_x_points.append(int(left_value_x))
-                left_y_points.append(int(left_value_y-1))
+                left_y_points.append(int(left_value_y-idx))
                 left_x_points.append(int(left_value_x))
-                left_y_points.append(int(left_value_y+1))
+                left_y_points.append(int(left_value_y+idx))
         if right_value_x is not None:
             for idx in range(4):
                 right_x_points.append(int(right_value_x))
@@ -325,7 +325,50 @@ def pipeline(init, image, debug=0):
     init['last_fit'][0] = get_fit(left_x_points, left_y_points, init.get('last_fit', [None, None])[0])
     init['last_fit'][1] = get_fit(right_x_points, right_y_points, init.get('last_fit', [None, None])[1])
 
-    result = annotate_image(init, warped, undistorted_image, left_x_points, right_x_points, debug=debug)
+    result, ploty, left_fitx, right_fitx = annotate_image(init, warped, undistorted_image, left_x_points, right_x_points, debug=debug)
+
+    if debug:
+        f, axs = plt.subplots(2, 3, figsize=(30, 10))
+        f.tight_layout()
+
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        axs[0][0].imshow(image)
+        axs[0][1].imshow(color_binary_image)
+        axs[0][2].imshow(binary_image, cmap='gray')
+
+        axs[1][0].imshow(cropped_image, cmap='gray')
+        axs[1][1].imshow(warped, cmap='gray')
+
+        axs[1][0].plot(*init['src'][0], 'o')
+        axs[1][0].plot(*init['src'][1], '*')
+        axs[1][0].plot(*init['src'][2], 'x')
+        axs[1][0].plot(*init['src'][3], '+')
+
+        axs[1][1].plot(*init['dst'][0], 'o')
+        axs[1][1].plot(*init['dst'][1], '*')
+        axs[1][1].plot(*init['dst'][2], 'x')
+        axs[1][1].plot(*init['dst'][3], '+')
+
+        # axs[1][2].imshow(warped, cmap='gray')
+        axs[1][1].plot(left_fitx, ploty, color='yellow')
+        axs[1][1].plot(right_fitx, ploty, color='yellow')
+
+        axs[1][1].plot(left_x_points, left_y_points, 'o', color='red')
+        axs[1][1].plot(right_x_points, right_y_points, 'o', color='red')
+        plt.xlim(0, 1280)
+        plt.ylim(720, 0)
+        result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+        axs[1][2].imshow(result)
+
+        f.savefig('figure.png')
+        if debug >= 1:
+            plt.imsave('frame.png', image)
+            # plt.imsave('./writeup-examples/undist.png', cv2.cvtColor(undistorted_image, cv2.COLOR_BGR2RGB))
+            # plt.imsave('./writeup-examples/binary.png', binary_image, cmap='gray')
+            # plt.imsave('./writeup-examples/perspective.png', warped, cmap='gray')
+            # plt.imsave('./writeup-examples/result.png', result, cmap='gray')
+            import pdb; pdb.set_trace()
+
     return result
 
 
