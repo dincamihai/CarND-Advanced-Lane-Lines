@@ -115,7 +115,7 @@ I'm also using an attenuation coeficient for the polynomials in order to smooth 
 
 In order to calculate the radius of curvature I've used this formula:
 
-TODO: add formula here
+Rcurve = (1+(2Ay+B)^2)^(3/2) / |2A|
 
 The code implementation can be seen here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/utils.py#L43-L50
 
