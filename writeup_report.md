@@ -74,17 +74,18 @@ The automatic detection is only used with videos, for the single image processin
 The hardcoded parameters were automatically found using the method above.
 
 ```python
+    src_top_xoffset = 21
     init['src'] = np.float32([
-        [ 790.,  720.],
-        [ 490.,  720.],
-        [ 591.,  510.],
-        [ 689.,  510.]
+        [ 880.,  700.],
+        [ 400.,  700.],
+        [ 590. + src_top_xoffset,  455.],
+        [ 690. - src_top_xoffset,  455.]
     ])
     init['dst'] = np.float32([
-        [ 730.,  720.],
-        [ 550.,  720.],
-        [ 550.,    0.],
-        [ 730.,    0.]
+        [ 770.,  720.],
+        [ 530.,  720.],
+        [ 530.,  0.],
+        [ 770.,  0.]
     ])
 ```
 
