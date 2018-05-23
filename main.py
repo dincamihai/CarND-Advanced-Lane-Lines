@@ -146,13 +146,11 @@ def apply_color_transform(img, debug=0):
 
     channel1 = hls[:, :, 2]
     channel2 = img[:, :, 2]
-    channel3 = hsv[:, :, 2]
+    channel3 = hls[:, :, 2]
     channel4 = hls[:, :, 1]
 
 
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-
-    channel3 = hls[:, :, 2]
     channel3 = clahe.apply(channel3)
     channel3_filtered = np.zeros_like(channel3)
     channel3_filtered[channel1 > 180] = 1
