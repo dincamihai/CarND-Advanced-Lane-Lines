@@ -153,3 +153,5 @@ To overcome this, I'm using histogram equalization: https://docs.opencv.org/3.1.
 https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L153-L154
 
 I also looked at `cv2.bilateralFilter` https://docs.opencv.org/2.4/modules/imgproc/doc/filtering.html?highlight=bilateralfilter#bilateralfilter in order to remove noise from the binary image but I decided to not use it for the submision.
+
+Note: please run `python main.py --help` to see how the provided script can be executed.
