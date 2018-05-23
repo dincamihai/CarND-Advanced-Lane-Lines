@@ -54,24 +54,20 @@ Distorted - Undistorted
 
 #### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
 
-I have used a combination of directional gradients with magnitude filtering applied on saturation and value channels of the HSV transformation and the red channel from the RGB image.
+I have used a combination of directional gradients with magnitude thresholds applied on saturation and value channels of the HLS and HSV transformation and the red channel from the RGB image.
+I have also used `cv2.dilate` to augment the pixels areas obtained after color transformation.
 
 Example: Original - Transformed
 
 ![alt text][image2-undist] ![alt text][image2-binary]
 
-TODO: add link to code here
+The code can be viewed here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L142-L191
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-Since we are expecting the transformation to contain two paralel markings, I was able to implemented a mechanism to automatically detect the parameters for the perspective transformation.
-I first use hardcoded parameters to get an usable transformation and then I use the histogram to identify 4 points in the image.
-I then apply the perspective transformation in a loop, adjusting the distance between the top points on each pass.
-It stops when the distance between the top points and the bottom points is almost equal (with some margin)
-I only implemented this because hardcoded transformation points were not working the same for the challenge videos.
+I've noticed that hardcoded perspective transformation points did not work for both project video and the challenge videos so I tried to implement a mecanism to detect the best transformation. This worked to some degree but I decided to simplify things and to use hardcoded points for the submission.
 
-The automatic detection is only used with videos, for the single image processing I am still using hardcoded parameters.
-The hardcoded parameters were automatically found using the method above.
+The points I'm using are the following:
 
 ```python
     src_top_xoffset = 21
@@ -88,18 +84,17 @@ The hardcoded parameters were automatically found using the method above.
         [ 770.,  0.]
     ])
 ```
-
-I verified that the parameters work using the straight lines test images provided.
+I have obtained the points by using the straight lines test images provided.
 
 Straight lines test image trasformed
-![alt text][orig-test2] ![alt text][perspective-test2]
+![alt text][orig-straight-lines] ![alt text][perspective-straight-lines]
 
 And the transformation for the test#1 image looks like this:
 
 Example: Binary - Perspective Transformation
-![alt text][image2-binary] ![alt text][image2-warped]
+![alt text][binary] ![alt text][warped]
 
-TODO: add link to code here
+The code can be found here: https://github.com/dincamihai/CarND-Advanced-Lane-Lines/blob/master/main.py#L194-L199
 
 #### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
